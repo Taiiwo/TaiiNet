@@ -8,6 +8,29 @@ var debug = function(log) {
         console.log(log);
     }
 }
+
+var signallers = [
+    "ws://localhost:5000/api/1",
+    "ws://192.168.0.14:5000/api/1"
+];
+
+function get_signaller(tn){
+    var host = signallers[Math.floor(Math.random()*signallers.length)];
+    var signaller = io(host);
+    signaller.on("disconnect", function() {
+        var callbacks = false;
+        if (this.signaller != undefined) {
+            callbacks = this.signaller._callbacks;
+        }
+        get_signaller(this);
+        if (callbacks) {
+            this.signaller._callbacks = callbacks;
+        }
+        console.log("Signaller is down, retrying");
+    }.bind(tn))
+    tn.signaller = signaller;
+}
+
 // represents a subscription to some data
 function Subscription(query, tn){
     this.query = query;
@@ -152,7 +175,7 @@ function Subscription(query, tn){
 
 // Handles connections to and from peer connections via the signaller
 function TaiiNet(){
-    this.signaller = io("ws://192.168.0.14:5000/api/1");
+    get_signaller(this);
     this.subscriptions = [];
     this.pcs = {};
 
