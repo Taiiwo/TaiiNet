@@ -13,6 +13,7 @@ multiple entry points.
 ## Mesh Networking
 Mesh networking does not reduce total network bandwidth usage, but it spreads it
 across the network so distribution forks off and resolves in parallel.
+
 ![mesh vs trad](https://tucu.ca/wp-content/uploads/2014/02/traditional-WiFI-vs-mesh-WiFI-network.png)
 
 ## Simple to Use
