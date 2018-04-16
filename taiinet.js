@@ -3,7 +3,11 @@
 
 var cfg = {'iceServers': [{'urls': 'stun:23.21.150.121'}]}
 var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
-
+var debug = function(log) {
+    if (true) {
+        console.log(log);
+    }
+}
 // represents a subscription to some data
 function Subscription(query, tn){
     this.query = query;
@@ -13,6 +17,9 @@ function Subscription(query, tn){
     this.seeding = 0;
     this.min_relevancy = 100;
     this.messages = [];
+    this.backlog_requesters = [];
+    this.ready = false;
+    this.missed_messages = [];
 
     // called when new sockets are available
     this.add_socket = function(socket) {
@@ -29,38 +36,100 @@ function Subscription(query, tn){
 
     // called when a new dc is made
     this.add_dc = function(id, query, dc) {
-        // TODO: Check if the dc is relevant to this subscription
+        dc.onclose = function() {
+            this.seeding--;
+        }.bind(this)
+        var onopen = function() {
+            if (!this.ready) {
+                this.trigger("ready");
+                this.ready = true;
+                this.missed_messages.forEach(function(message){
+                    this.send(message);
+                }.bind(this))
+                if (this.get_backlog) {
+                    this.send({}, "request_backlog")
+                }
+            }
+        }
+        if (dc.readyState == "open") {
+            onopen()
+        }
+        else {
+            dc.onopen = onopen.bind(this)
+        }
         dc.onmessage = function(message){
             var data = JSON.parse(message.data);
             // if we've seen this message before
-            if (this.messages.indexOf(message.data) >= 0) {
-                return;
+            if (data._type == "message") {
+                if (this.messages.indexOf(message.data) >= 0) {
+                    return;
+                }
+                // if the message doesn't match our query
+                if (match_queries(data, this.query) < this.min_relevancy) {
+                    return;
+                }
+                this.trigger("data", message);
+                // tell the other connections
+                this.send(data);
             }
-            // if the message doesn't match our query
-            if (match_queries(data, this.query) < this.min_relevancy) {
-                return;
+            else if (data._type == "request_backlog") {
+                this.backlog_requesters.push(message.target);
+                // request backlogs if we haven't already
+                if (this.got_backlog == undefined) {
+                    this.send({query: this.query}, "request_backlog");
+                    this.got_backlog = true;
+                }
+                // send the requester all of our logs
+                this.messages.forEach(function(backlog) {
+                    var backlog = JSON.parse(backlog);
+                    if (backlog._type == "message") {
+                        message.target.send(JSON.stringify({
+                            _type: "backlog", backlog: backlog
+                        }));
+                    }
+                })
             }
-            this.trigger("data", message);
-            // tell the other connections
-            this.send(message.data);
+            else if (data._type == "backlog") {
+                if (this.messages.indexOf(message.data) >= 0) {
+                    return;
+                }
+                // have we seen this message before
+                if (this.messages.indexOf(data.backlog) >= 0) {
+                    return;
+                }
+                // send the message to our backlog requesters
+                this.backlog_requesters.forEach(function(requester) {
+                    requester.send(message.data)
+                })
+                this.messages.push(JSON.stringify(JSON.parse(message.data).backlog))
+                // call the blacklog event
+                this.trigger("backlog", message);
+            }
             this.messages.push(message.data);
         }.bind(this)
         this.connections[id] = dc;
         this.trigger("new_connection", {id:id, dc:dc, sub:this});
     }
 
-    this.send = function(data) {
-        // tell the other connections
-        for (var i in this.connections) {
-            var connection = this.connections[i];
-            if (connection.readyState == "open") {
-                connection.send(JSON.stringify(data));
-            }
-            else {
-                // remove the dc if it's not open
-                delete this.connections[i];
-            }
+    this.send = function(data, type) {
+      data._type = type || "message";
+      // if we try to send a message before the first connection, just add it
+      // to a list and send it when we connect
+      if (!this.ready) {
+          this.missed_messages.push(data);
+          return;
+      }
+      // tell the other connections
+      for (var i in this.connections) {
+        var connection = this.connections[i];
+        if (connection.readyState == "open") {
+          connection.send(JSON.stringify(data));
         }
+        else {
+          // remove the dc if it's not open
+          delete this.connections[i];
+        }
+      }
     }
 
     this.events = [];
@@ -83,12 +152,12 @@ function Subscription(query, tn){
 
 // Handles connections to and from peer connections via the signaller
 function TaiiNet(){
-    this.signaller = io("localhost:5000/api/1");
+    this.signaller = io("ws://192.168.0.14:5000/api/1");
     this.subscriptions = [];
     this.pcs = {};
 
     // returns a subscription object to the query
-    this.subscribe = function(query) {
+    this.subscribe = function(query, get_backlog) {
         this.signaller.on("socket_broadcast", function(socket) {
             this.subscriptions.forEach(function(sub){
                 sub.add_socket(socket);
@@ -106,6 +175,7 @@ function TaiiNet(){
             }]);
         }.bind(this))
         var sub = new Subscription(query, this);
+        sub.get_backlog = get_backlog || false;
         this.subscriptions.push(sub);
         return sub;
     }
