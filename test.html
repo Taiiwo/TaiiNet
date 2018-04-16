@@ -9,12 +9,27 @@
         <script src="taiinet.js"></script>
     </head>
     <body>
+        <div id="tweets"></div>
         <script>
             var tn = new TaiiNet();
-            var sub = tn.subscribe({room: "test-room"});
+            var sub = tn.subscribe({type: "tweet"}, true);
             sub.on("data", function(message){
                 console.log(message);
+                add_tweet(JSON.parse(message.data).tweet)
             });
+            sub.on("backlog", function(backlog){
+              console.log(backlog);
+              add_tweet(JSON.parse(backlog.data).backlog.tweet)
+            })
+
+            function send_tweet(tweet) {
+                sub.send({type: "tweet", tweet: tweet});
+            }
+
+            function add_tweet(tweet) {
+                var tweets = document.querySelector("#tweets");
+                tweets.innerHTML = tweets.innerHTML + tweet + "<br />"
+            }
         </script>
     </body>
 </html>
