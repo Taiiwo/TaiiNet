@@ -11,17 +11,24 @@
     <body>
         <div id="tweets"></div>
         <script>
+            // connect to signaller
             var tn = new TaiiNet();
-            var sub = tn.subscribe({type: "tweet"}, true);
+            // tell the network what data we want
+            var sub = tn.subscribe({type: "tweet"}, true);// true means get logs, too
+            // when we get a message
             sub.on("data", function(message){
                 console.log(message);
+                // show the tweet
                 add_tweet(JSON.parse(message.data).tweet)
             });
+            // when we get a backlog message
             sub.on("backlog", function(backlog){
               console.log(backlog);
+              // show the tweet
               add_tweet(JSON.parse(backlog.data).backlog.tweet)
             })
 
+            // super fancy GUI nonesense
             function send_tweet(tweet) {
                 sub.send({type: "tweet", tweet: tweet});
             }
@@ -30,6 +37,10 @@
                 var tweets = document.querySelector("#tweets");
                 tweets.innerHTML = tweets.innerHTML + tweet + "<br />"
             }
+            function tweetbutton(){
+                send_tweet(document.querySelector("#tweet").value);
+            }
         </script>
+        <input id="tweet" /><button onclick="tweetbutton()">Tweet!</button>
     </body>
 </html>
