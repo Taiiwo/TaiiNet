@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <meta charset="utf-8">
+        <title>TaiiNet</title>
+        <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.js"></script>
+        <script src="taiinet.js"></script>
+    </head>
+    <body>
+        <script>
+            var tn = new TaiiNet();
+            var sub = tn.subscribe({room: "test-room"});
+            sub.on("data", function(message){
+                console.log(message);
+            });
+        </script>
+    </body>
+</html>

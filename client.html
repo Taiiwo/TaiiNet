@@ -1,0 +1,181 @@
+<script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+<script>
+/*
+ *  Copyright (c) 2015 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree.
+ */
+
+'use strict';
+
+var localConnection;
+var remoteConnection;
+
+
+var cfg = {'iceServers': {'urls': 'stun:23.21.150.121'}}
+var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
+
+function Subscription(query, tn){
+    this.query = query;
+    this.tn = tn;
+    this.connections = {};
+
+    this.add_socket = function(socket) {
+        // decide if we want the new socket
+        var dc = this.tn.createConnection(socket);
+        this.add_dc(socket.id, socket.query, dc);
+    }
+
+    this.add_dc = function(id, query, dc) {
+        dc.onmessage = function(message){
+            this.trigger("data", message);
+        }.bind(this)
+        this.connections[id] = dc;
+    }
+
+    this.send = function(data) {
+        for (var i in this.connections) {
+            var connection = this.connections[i];
+            connection.send(data);
+        }
+    }
+
+    this.events = [];
+    this.on = function(event, callback){
+        if (this.events[event] == undefined){
+            this.events[event] = [];
+        }
+        this.events[event].push(callback);
+    }
+
+    this.trigger = function(event, data){
+        if (this.events[event] != undefined){
+            for (var i in this.events[event]){
+                var callback = this.events[event][i];
+                callback(data);
+            }
+        }
+    }
+}
+
+function TaiiNet(){
+    this.signaller = io("localhost:5000/api/1");
+    this.subscriptions = [];
+    this.peer_connections = {};
+    this.subscribe = function(query) {
+        this.signaller.on("connect", function(){
+            // tell people we're subscribing
+            this.signaller.emit("socket_broadcast", [{
+                query: query,
+                id: this.signaller.id
+            }]);
+            // tell the this.signaller to send us new sockets
+            this.signaller.emit("get_sockets", {
+                query: query
+            });
+        }.bind(this))
+        var sub = new Subscription(query, this);
+        this.subscriptions.push(sub);
+
+        this.signaller.on("socket_broadcast", function(socket) {
+            this.subscriptions.forEach(function(sub){
+                sub.add_socket(socket);
+            });
+        }.bind(this))
+        return sub;
+    }
+
+    this.createConnection = function(socket) {
+        // SCTP is supported from Chrome 31 and is supported in FF.
+        // No need to pass DTLS constraint as it is on by default in Chrome 31.
+        // For SCTP, reliable and ordered is true by default.
+        // Add localConnection to global scope to make it visible
+        // from the browser console.
+        localConnection = new RTCPeerConnection(cfg);
+        this.peer_connections[socket.id] = localConnection;
+
+        var sendChannel = localConnection.createDataChannel('sendDataChannel');
+
+        localConnection.onicecandidate = function(e) {
+            console.log("sending ice candidate")
+            this.signal(socket.id, {
+                type: "ice_candidate",
+                candidate: e.candidate
+            });
+        }.bind(this);
+
+        localConnection.createOffer().then(function(desc){
+            localConnection.setLocalDescription(desc);
+            this.signal(socket.id, {
+                type: "offer",
+                offer: desc,
+                query: socket.query
+            })
+        }.bind(this));
+
+        return sendChannel;
+    }
+    this.signaller.on("message", function(message) {
+        console.log("got message: ", message.data)
+        if (message.data.type == "offer") {
+            // Add remoteConnection to global scope to make it visible
+            // from the browser console.
+            remoteConnection = new RTCPeerConnection(cfg);
+            this.peer_connections[message.from_id] = remoteConnection;
+            remoteConnection.ondatachannel = function(dc){
+                this.subscriptions.forEach(function(sub) {
+                    sub.add_dc(
+                        message.from_id,
+                        message.data.query,
+                        dc.channel || dc
+                    );
+                })
+            }.bind(this)
+            remoteConnection.onicecandidate = function(e) {
+                console.log("sending ice candidate")
+                this.signal(message.from_id, {
+                    type: "ice_candidate",
+                    candidate: e.candidate
+                });
+            }.bind(this);
+            remoteConnection.setRemoteDescription(
+            new RTCSessionDescription(message.data.offer)
+            );
+            remoteConnection.createAnswer().then(function(answer) {
+                remoteConnection.setLocalDescription(answer);
+                this.signal(message.from_id, {
+                    type: "answer",
+                    answer: answer
+                })
+            }.bind(this))
+        }
+        if (message.data.type == "answer") {
+            localConnection.setRemoteDescription(
+            new RTCSessionDescription(message.data.answer)
+            );
+        }
+        if (message.data.type == "ice_candidate") {
+            var pc = this.peer_connections[message.from_id];
+            pc.addIceCandidate(message.data.candidate);
+        }
+    }.bind(this))
+    this.signal = function(id, data){
+        this.signaller.emit("send_message", {
+            to_id: id,
+            from_id: this.signaller.id,
+            data: data
+        })
+    }
+}
+
+var tn = new TaiiNet();
+var sub = tn.subscribe({title: "asd"})
+
+sub.on("data", function(data) {
+    console.log(data);
+})
+
+</script>
