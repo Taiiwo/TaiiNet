@@ -48,11 +48,12 @@ function Subscription(query, tn){
         // only send out connection requests to a certain number of people
         if (this.seeding < this.seed_limit){
             // check if the query matches ours
+            // check if the query matches ours
             if (match_queries(this.query, socket.query) >= this.min_relevancy){
-                this.tn.signal(socket.id, {
-                    type: "get_status",
-                    query: this.query
-                })
+                var dc = this.tn.create_connection(socket);
+                this.add_dc(socket.id, socket.query, dc);
+                this.seeding++;
+                this.tn.clients++;
             }
         }
     }
