@@ -11,7 +11,8 @@ var debug = function(log) {
 
 var signallers = [
     "ws://localhost:5000/api/1",
-    "ws://192.168.0.14:5000/api/1"
+    "ws://192.168.0.14:5000/api/1",
+    "ws://167.160.189.251:5000/api/1"
 ];
 
 function get_signaller(tn){
