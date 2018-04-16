@@ -35,7 +35,7 @@ function Subscription(query, tn){
     this.query = query;
     this.tn = tn;
     this.connections = {};
-    this.seed_limit = 3;
+    this.seed_limit = 6;
     this.seeding = 0;
     this.min_relevancy = 100;
     this.messages = [];
@@ -49,9 +49,10 @@ function Subscription(query, tn){
         if (this.seeding < this.seed_limit){
             // check if the query matches ours
             if (match_queries(this.query, socket.query) >= this.min_relevancy){
-                var dc = this.tn.create_connection(socket);
-                this.add_dc(socket.id, socket.query, dc);
-                this.seeding++;
+                this.tn.signal(socket.id, {
+                    type: "get_status",
+                    query: this.query
+                })
             }
         }
     }
@@ -60,6 +61,7 @@ function Subscription(query, tn){
     this.add_dc = function(id, query, dc) {
         dc.onclose = function() {
             this.seeding--;
+            this.tn.clients--;
         }.bind(this)
         var onopen = function() {
             if (!this.ready) {
@@ -68,6 +70,7 @@ function Subscription(query, tn){
                 this.missed_messages.forEach(function(message){
                     this.send(message);
                 }.bind(this))
+                this.missed_messages = [];
                 if (this.get_backlog) {
                     this.send({}, "request_backlog")
                 }
@@ -177,6 +180,8 @@ function TaiiNet(){
     get_signaller(this);
     this.subscriptions = [];
     this.pcs = {};
+    this.clients = 0;
+    this.max_clients = 4;
 
     // returns a subscription object to the query
     this.subscribe = function(query, get_backlog) {
@@ -237,6 +242,26 @@ function TaiiNet(){
     // The MailRoom
     // handle messages from other nodes.
     this.signaller.on("message", function(message) {
+        if (message.data.type == "status") {
+            if (message.data.available) {
+                var dc = this.create_connection({
+                    id: message.from_id,
+                    query: message.data.query
+                });
+                this.subscriptions.forEach(function(sub) {
+                    sub.add_dc(message.from_id, message.data.query, dc);
+                    sub.seeding++;
+                })
+                this.clients++;
+            }
+        }
+        if (message.data.type == "get_status") {
+            this.signal(message.from_id, {
+                type: "status",
+                available: this.clients < this.max_clients,
+                query: message.data.query
+            })
+        }
         if (message.data.type == "offer") {
             var remoteConnection = new RTCPeerConnection(cfg);
             this.pcs[message.from_id] = remoteConnection;
