@@ -31,6 +31,7 @@
             // super fancy GUI nonesense
             function send_tweet(tweet) {
                 sub.send({type: "tweet", tweet: tweet});
+                add_tweet(tweet);
             }
 
             function add_tweet(tweet) {
