@@ -46,7 +46,7 @@ function Subscription(query, tn){
     // called when new sockets are available
     this.add_socket = function(socket) {
         // only send out connection requests to a certain number of people
-        if (this.seeding < this.seed_limit){
+        if (this.seeding < this.seed_limit && socket.id != this.tn.signaller.id){
             // check if the query matches ours
             // check if the query matches ours
             if (match_queries(this.query, socket.query) >= this.min_relevancy){
@@ -63,25 +63,29 @@ function Subscription(query, tn){
         dc.onclose = function() {
             this.seeding--;
             this.tn.clients--;
+            if (this.seeding < 1) {
+                this.ready = false;
+            }
         }.bind(this)
         var onopen = function() {
+            this.connections[id] = dc;
             if (!this.ready) {
                 this.trigger("ready");
-                this.ready = true;
                 this.missed_messages.forEach(function(message){
                     this.send(message);
                 }.bind(this))
                 this.missed_messages = [];
+                this.ready = true;
                 if (this.get_backlog) {
                     this.send({}, "request_backlog")
                 }
             }
-        }
+        }.bind(this)
         if (dc.readyState == "open") {
             onopen()
         }
         else {
-            dc.onopen = onopen.bind(this)
+            dc.onopen = onopen;
         }
         dc.onmessage = function(message){
             var data = JSON.parse(message.data);
@@ -99,6 +103,7 @@ function Subscription(query, tn){
                 this.send(data);
             }
             else if (data._type == "request_backlog") {
+                console.log("peer requests backlog")
                 this.backlog_requesters.push(message.target);
                 // request backlogs if we haven't already
                 if (this.got_backlog == undefined) {
@@ -123,17 +128,18 @@ function Subscription(query, tn){
                 if (this.messages.indexOf(data.backlog) >= 0) {
                     return;
                 }
-                // send the message to our backlog requesters
-                this.backlog_requesters.forEach(function(requester) {
-                    requester.send(message.data)
-                })
+                if (this.messages.indexOf(JSON.parse(message.data).backlog) < 0) {
+                    // send the message to our backlog requesters
+                    this.backlog_requesters.forEach(function(requester) {
+                        requester.send(message.data)
+                    })
+                }
                 this.messages.push(JSON.stringify(JSON.parse(message.data).backlog))
                 // call the blacklog event
                 this.trigger("backlog", message);
             }
             this.messages.push(message.data);
         }.bind(this)
-        this.connections[id] = dc;
         this.trigger("new_connection", {id:id, dc:dc, sub:this});
     }
 
@@ -149,13 +155,14 @@ function Subscription(query, tn){
       for (var i in this.connections) {
         var connection = this.connections[i];
         if (connection.readyState == "open") {
-          connection.send(JSON.stringify(data));
+            connection.send(JSON.stringify(data));
         }
         else {
           // remove the dc if it's not open
           delete this.connections[i];
         }
       }
+      this.messages.push(JSON.stringify(data));
     }
 
     this.events = [];
@@ -219,14 +226,14 @@ function TaiiNet(){
         var localConnection = new RTCPeerConnection(cfg);
         this.pcs[socket.id] = localConnection;
 
-        var sendChannel = localConnection.createDataChannel('sendDataChannel');
-
         localConnection.onicecandidate = function(e) {
             this.signal(socket.id, {
                 type: "ice_candidate",
                 candidate: e.candidate
             });
         }.bind(this);
+
+        var sendChannel = localConnection.createDataChannel('sendDataChannel');
 
         localConnection.createOffer().then(function(desc){
             this.pcs[socket.id].setLocalDescription(desc);
@@ -235,6 +242,7 @@ function TaiiNet(){
                 offer: desc,
                 query: socket.query
             })
+            console.log("sending offer to " + socket.id)
         }.bind(this));
 
         return sendChannel;
@@ -243,6 +251,13 @@ function TaiiNet(){
     // The MailRoom
     // handle messages from other nodes.
     this.signaller.on("message", function(message) {
+        if (message.data.type == "get_status") {
+            this.signal(message.from_id, {
+                type: "status",
+                available: this.clients < this.max_clients,
+                query: message.data.query
+            })
+        }
         if (message.data.type == "status") {
             if (message.data.available) {
                 var dc = this.create_connection({
@@ -255,13 +270,6 @@ function TaiiNet(){
                 })
                 this.clients++;
             }
-        }
-        if (message.data.type == "get_status") {
-            this.signal(message.from_id, {
-                type: "status",
-                available: this.clients < this.max_clients,
-                query: message.data.query
-            })
         }
         if (message.data.type == "offer") {
             var remoteConnection = new RTCPeerConnection(cfg);
@@ -285,20 +293,21 @@ function TaiiNet(){
                 });
             }.bind(this);
             remoteConnection.setRemoteDescription(
-            new RTCSessionDescription(message.data.offer)
-            );
-            remoteConnection.createAnswer().then(function(answer) {
-                remoteConnection.setLocalDescription(answer);
-                this.signal(message.from_id, {
-                    type: "answer",
-                    answer: answer
-                })
+                new RTCSessionDescription(message.data.offer)
+            ).then(function(){
+                remoteConnection.createAnswer().then(function(answer) {
+                    remoteConnection.setLocalDescription(answer);
+                    this.signal(message.from_id, {
+                        type: "answer",
+                        answer: answer
+                    })
+                }.bind(this))
             }.bind(this))
         }
         else if (message.data.type == "answer") {
             this.pcs[message.from_id].setRemoteDescription(
-            new RTCSessionDescription(message.data.answer)
-            );
+                new RTCSessionDescription(message.data.answer)
+            ).catch(console.log)
         }
         else if (message.data.type == "ice_candidate") {
             var pc = this.pcs[message.from_id];
