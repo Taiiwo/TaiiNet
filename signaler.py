@@ -2,20 +2,46 @@ import json
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
 from socketIO_client import SocketIO as SocketIO_client
+from socketIO_client import BaseNamespace
 import node_discovery
 import eventlet
-eventlet.monkey_patch()
-
+import sys
+#eventlet.monkey_patch()
+our_url = "localhost:" + sys.argv[1]
 nodes = [
     # List of nodes to updates and receive updates from
 ]
-node_sockets = [SocketIO_client(node) for node in nodes]
+if len(sys.argv) > 2:
+    nodes.append(["localhost", int(sys.argv[2])])
+
+class ThisIsDumb(BaseNamespace):
+    pass
+
 
 app = Flask(__name__)
 socket = SocketIO(app)
 # List of connected clients by query {query: [socket ids...]...}
 socket_collection = {}
 socket_ids = []
+
+print(nodes)
+
+node_sockets = []
+for node in nodes:
+    print("connecting to " + node[0])
+    node_socket = SocketIO_client(node[0], node[1])
+    print("done")
+    api_namespace = node_socket.define(ThisIsDumb, "/api/1")
+    node_socket.emit("add_signaller", {"host": our_url})
+    node_sockets.append(api_namespace)
+
+@socket.on("add_signaller")
+def add_signaller(signaller):
+    print("adding signaller")
+    node_socket = SocketIO_client(signaller["host"])
+    print("a")
+    api_namespace = node_socket.define(ThisIsDumb, "/api/1")
+    node_sockets.append(api_namespace)
 
 """
 Adds an array of web sockets to the signal network
@@ -39,7 +65,9 @@ def socket_broadcast(socket_data):
         # append value if we don't already have it
         if sock["id"] not in socket_collection[query]:
             socket_collection[query].append(sock["id"])
-            socket_ids.append(sock["id"])
+            print(request.sid)
+            if sock["id"][7:] == request.sid:
+                socket_ids.append(sock["id"])
             new = True
             # update all the socket subscribers that match this query
             for query in socket_subscribers:
@@ -55,7 +83,7 @@ def socket_broadcast(socket_data):
             # update the other signaller nodes
             for node_socket in node_sockets:
                 node_socket.emit("socket_broadcast", [sock])
-    return 1
+    return "1"
 
 """
 sends a message to a specified socket
@@ -77,13 +105,15 @@ def answer_broadcast(message_data):
         return False
     else:
         messages_received.append(json.dumps(message_data))
+    print(message_data)
+    print(socket_ids)
     if message_data["to_id"] in socket_ids:
         # the recipient is a child of this node
-        print(message_data)
         emit("message", message_data, room=message_data["to_id"][7:])
     else:
         # we don't have the recipient as a child, rebroadcast to other nodes
         for node_socket in node_sockets:
+            print("sending messages to peers")
             node_socket.emit("send_message", message_data)
     return 1
 
@@ -137,4 +167,4 @@ def disconnect():
     remove_socket(request.sid)
 
 if __name__ == '__main__':
-    socket.run(app, debug=False, host="0.0.0.0")
+    socket.run(app, debug=False, port=int(sys.argv[1]))
