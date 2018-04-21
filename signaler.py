@@ -7,16 +7,13 @@ import node_discovery
 import eventlet
 import sys
 #eventlet.monkey_patch()
-our_url = "localhost:" + sys.argv[1]
+our_url = "£.ga:5000"
 nodes = [
     # List of nodes to updates and receive updates from
 ]
-if len(sys.argv) > 2:
-    nodes.append(["localhost", int(sys.argv[2])])
 
 class ThisIsDumb(BaseNamespace):
     pass
-
 
 app = Flask(__name__)
 socket = SocketIO(app)
@@ -167,4 +164,4 @@ def disconnect():
     remove_socket(request.sid)
 
 if __name__ == '__main__':
-    socket.run(app, debug=False, port=int(sys.argv[1]))
+    socket.run(app, debug=False)
