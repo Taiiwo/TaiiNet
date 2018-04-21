@@ -3,7 +3,11 @@
 
 var cfg = {'iceServers': [
     {'urls': 'stun:23.21.150.121'},
-    //{'urls': 'turn:rick.mita.me:3478'}
+    {
+        'urls': 'turn:rick.mita.me:3478',
+        username: "ayylmao",
+        credential: "ayylmao"
+    }
 ]}
 var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
 var debug = function(log) {
