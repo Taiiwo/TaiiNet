@@ -164,4 +164,4 @@ def disconnect():
     remove_socket(request.sid)
 
 if __name__ == '__main__':
-    socket.run(app, debug=False)
+    socket.run(app, debug=False, host="0.0.0.0")
