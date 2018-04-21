@@ -104,11 +104,14 @@
 
             var graph_nodes = {};
             var tns = [];
-
-            for (var i = 0; i < 10; i++) {
+            var i = 0;
+            function add_tn(){
                 tns[i] = new TaiiNet();
                 var tn = tns[i];
                 var sub = tn.subscribe({room: "test-room"});
+                // randomize number of total connections
+                //sub.seed_limit = Math.floor(Math.random() * 5) + 4;
+                //console.log("setting seed limit to " + sub.seed_limit)
                 sub.on("data", function(message){
                     console.log(message);
                 });
@@ -122,7 +125,9 @@
                         link_node(graph_nodes[tns[ind].signaller.id], graph_nodes[e.id])
                     }
                 }(i))
+                i++;
             }
         </script>
+        <button onclick="add_tn()"> add node </button>
     </body>
 </html>
