@@ -1,7 +1,10 @@
 'use strict';
 
 
-var cfg = {'iceServers': [{'urls': 'stun:23.21.150.121'}]}
+var cfg = {'iceServers': [
+    {'urls': 'stun:23.21.150.121'},
+    //{'urls': 'turn:rick.mita.me:3478'}
+]}
 var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
 var debug = function(log) {
     if (true) {
@@ -42,6 +45,8 @@ function Subscription(query, tn){
     this.backlog_requesters = [];
     this.ready = false;
     this.missed_messages = [];
+    this.out = 0;
+    this.tot = 0;
 
     // called when new sockets are available
     this.add_socket = function(socket) {
@@ -50,32 +55,44 @@ function Subscription(query, tn){
             // check if the query matches ours
             // check if the query matches ours
             if (match_queries(this.query, socket.query) >= this.min_relevancy){
+                /*
                 var dc = this.tn.create_connection(socket);
                 this.add_dc(socket.id, socket.query, dc);
                 this.seeding++;
-                this.tn.clients++;
+                */
+                if (this.out < 3 && this.tot < 7){
+                    this.out++;
+                    console.log("getting status")
+                    this.tn.signal(socket.id, {
+                        type: "get_status",
+                        query: this.query
+                    })
+                }
             }
         }
     }
 
     // called when a new dc is made
     this.add_dc = function(id, query, dc) {
+        this.tot++;
         dc.onclose = function() {
             this.seeding--;
-            this.tn.clients--;
-            if (this.seeding < 1) {
+            // if the last DC leaves, start caching messages for when we connect
+            if (this.tn.clients < 1) {
                 this.ready = false;
             }
         }.bind(this)
         var onopen = function() {
             this.connections[id] = dc;
             if (!this.ready) {
+                // when the first datachannel opens
                 this.trigger("ready");
                 this.missed_messages.forEach(function(message){
                     this.send(message);
-                }.bind(this))
+                }.bind(this));
                 this.missed_messages = [];
                 this.ready = true;
+                // ask for the message we missed
                 if (this.get_backlog) {
                     this.send({}, "request_backlog")
                 }
@@ -87,6 +104,7 @@ function Subscription(query, tn){
         else {
             dc.onopen = onopen;
         }
+        // data channel MailRoom
         dc.onmessage = function(message){
             var data = JSON.parse(message.data);
             // if we've seen this message before
@@ -130,9 +148,16 @@ function Subscription(query, tn){
                 }
                 if (this.messages.indexOf(JSON.parse(message.data).backlog) < 0) {
                     // send the message to our backlog requesters
-                    this.backlog_requesters.forEach(function(requester) {
-                        requester.send(message.data)
-                    })
+                    for (var i in this.backlog_requesters) {
+                        var requester = this.backlog_requesters[i];
+                        if (requester.readyState == "open") {
+                            requester.send(message.data);
+                        }
+                        else {
+                          // remove the dc if it's not open
+                          delete this.backlog_requesters[i];
+                        }
+                    }
                 }
                 this.messages.push(JSON.stringify(JSON.parse(message.data).backlog))
                 // call the blacklog event
@@ -189,15 +214,20 @@ function TaiiNet(){
     this.subscriptions = [];
     this.pcs = {};
     this.clients = 0;
-    this.max_clients = 4;
+    this.max_clients = 7;
+
+    this.signaller.on("socket_broadcast", function(socket) {
+        console.log("got broadcast")
+        this.subscriptions.forEach(function(sub){
+            sub.add_socket(socket);
+        });
+    }.bind(this))
 
     // returns a subscription object to the query
     this.subscribe = function(query, get_backlog) {
-        this.signaller.on("socket_broadcast", function(socket) {
-            this.subscriptions.forEach(function(sub){
-                sub.add_socket(socket);
-            });
-        }.bind(this))
+        var sub = new Subscription(query, this);
+        sub.get_backlog = get_backlog || false;
+        this.subscriptions.push(sub);
         this.signaller.on("connect", function(){
             // tell the this.signaller to send us new sockets
             this.signaller.emit("get_sockets", {
@@ -209,9 +239,6 @@ function TaiiNet(){
                 id: this.signaller.id
             }]);
         }.bind(this))
-        var sub = new Subscription(query, this);
-        sub.get_backlog = get_backlog || false;
-        this.subscriptions.push(sub);
         return sub;
     }
 
@@ -251,7 +278,9 @@ function TaiiNet(){
     // The MailRoom
     // handle messages from other nodes.
     this.signaller.on("message", function(message) {
+        console.log("got " + message.data.type)
         if (message.data.type == "get_status") {
+            console.log("getting status")
             this.signal(message.from_id, {
                 type: "status",
                 available: this.clients < this.max_clients,
@@ -274,9 +303,11 @@ function TaiiNet(){
         if (message.data.type == "offer") {
             var remoteConnection = new RTCPeerConnection(cfg);
             this.pcs[message.from_id] = remoteConnection;
+            this.clients++;
             // offer the resulting datachannel to all the subs when connected
             remoteConnection.ondatachannel = function(dc){
                 this.subscriptions.forEach(function(sub) {
+                    sub.seeding++;
                     if (match_queries(sub.query, message.data.query) >= sub.min_relevancy) {
                         sub.add_dc(
                             message.from_id,
