@@ -103,7 +103,6 @@ def answer_broadcast(message_data):
     else:
         messages_received.append(json.dumps(message_data))
     print(message_data)
-    print(socket_ids)
     if message_data["to_id"] in socket_ids:
         # the recipient is a child of this node
         emit("message", message_data, room=message_data["to_id"][7:])
