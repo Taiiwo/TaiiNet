@@ -2,12 +2,7 @@
 
 
 var cfg = {'iceServers': [
-    {'urls': 'stun:23.21.150.121'},
-    {
-        'urls': 'turn:rick.mita.me:3478',
-        username: "ayylmao",
-        credential: "ayylmao"
-    }
+    {'urls': 'stun:23.21.150.121'}
 ]}
 var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
 var debug = function(log) {
@@ -28,11 +23,11 @@ function get_signaller(tn){
         if (this.signaller != undefined) {
             callbacks = this.signaller._callbacks;
         }
-        get_signaller(this);
         if (callbacks) {
             this.signaller._callbacks = callbacks;
         }
         console.log("Signaller is down, retrying");
+        get_signaller(this);
     }.bind(tn))
     tn.signaller = signaller;
 }
@@ -249,34 +244,16 @@ function TaiiNet(){
     // initiates a connection to the node at the specified socket
     // returns a datachannel to that node
     this.create_connection = function(socket) {
-        // SCTP is supported from Chrome 31 and is supported in FF.
-        // No need to pass DTLS constraint as it is on by default in Chrome 31.
-        // For SCTP, reliable and ordered is true by default.
-        // Add localConnection to global scope to make it visible
-        // from the browser console.
-        var localConnection = new RTCPeerConnection(cfg);
+        var localConnection = new SimplePeer({initiator: true});
         this.pcs[socket.id] = localConnection;
-
-        localConnection.onicecandidate = function(e) {
+        localConnection.on("signal", function (data) {
             this.signal(socket.id, {
-                type: "ice_candidate",
-                candidate: e.candidate
-            });
-        }.bind(this);
-
-        var sendChannel = localConnection.createDataChannel('sendDataChannel');
-
-        localConnection.createOffer().then(function(desc){
-            this.pcs[socket.id].setLocalDescription(desc);
-            this.signal(socket.id, {
-                type: "offer",
-                offer: desc,
+                type: "signal",
+                data: data,
                 query: socket.query
-            })
-            console.log("sending offer to " + socket.id)
+            });
         }.bind(this));
-
-        return sendChannel;
+        return localConnection;
     }
 
     // The MailRoom
@@ -304,42 +281,38 @@ function TaiiNet(){
                 this.clients++;
             }
         }
-        if (message.data.type == "offer") {
-            var remoteConnection = new RTCPeerConnection(cfg);
-            this.pcs[message.from_id] = remoteConnection;
-            this.clients++;
-            // offer the resulting datachannel to all the subs when connected
-            remoteConnection.ondatachannel = function(dc){
-                this.subscriptions.forEach(function(sub) {
-                    sub.seeding++;
-                    if (match_queries(sub.query, message.data.query) >= sub.min_relevancy) {
-                        sub.add_dc(
-                            message.from_id,
-                            message.data.query,
-                            dc.channel || dc
-                        );
-                    }
-                })
-            }.bind(this)
-            remoteConnection.onicecandidate = function(e) {
-                this.signal(message.from_id, {
-                    type: "ice_candidate",
-                    candidate: e.candidate
-                });
-            }.bind(this);
-            remoteConnection.setRemoteDescription(
-                new RTCSessionDescription(message.data.offer)
-            ).then(function(){
-                remoteConnection.createAnswer().then(function(answer) {
-                    remoteConnection.setLocalDescription(answer);
+        if (message.data.type == "signal") {
+            if (this.pcs[message.from_id] == undefined) {
+                var remoteConnection = new SimplePeer();
+                this.pcs[message.from_id] = remoteConnection;
+                remoteConnection.on("signal", function(data) {
                     this.signal(message.from_id, {
-                        type: "answer",
-                        answer: answer
+                        type: "signal",
+                        data: data,
+                        query: message.data.query
+                    });
+                }.bind(this));
+                remoteConnection._pc.ondatachannel = function(dc){
+                    this.subscriptions.forEach(function(sub) {
+                        sub.seeding++;
+                        if (match_queries(sub.query, message.data.query) >= sub.min_relevancy) {
+                            sub.add_dc(
+                                message.from_id,
+                                message.data.query,
+                                dc.channel || dc
+                            );
+                        }
                     })
-                }.bind(this))
-            }.bind(this))
+                }.bind(this)
+                this.clients++;
+            }
+            else {
+                var remoteConnection = this.pcs[message.from_id];
+            }
+            remoteConnection.signal(message.data.data);
         }
         else if (message.data.type == "answer") {
+            console.log(this.pcs[message.from_id])
             this.pcs[message.from_id].setRemoteDescription(
                 new RTCSessionDescription(message.data.answer)
             ).catch(console.log)
