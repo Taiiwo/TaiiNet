@@ -1,334 +1,321 @@
-'use strict';
+// a list of signallers to use by default. These are signallers the author trusts
+// a malicious signal node could DoS the network by refusing to intiate requests
+var signallers = [
+    //"ws://167.160.189.251:5000/api/1",
+    "ws://192.168.0.14:5000/api/1"
+];
 
-
-var cfg = {'iceServers': [
-    {'urls': 'stun:23.21.150.121'}
-]}
-var con = { 'optional': [{'DtlsSrtpKeyAgreement': true}]}
-var debug = function(log) {
-    if (true) {
-        console.log(log);
+var debug = true;
+function log(thing) {
+    if (debug) {
+        console.log(thing);
     }
 }
 
-var signallers = [
-    "ws://167.160.189.251:5000/api/1"
-];
+function Subscription(tn, query, backlog) {
+    this.tn = tn;
+    this.backlog = backlog || false;
+    this.relevant_sockets = [];
+    this.query = query;
+    this.max_connections = 4;
+    this.connections = [];
+    this.messages = [];
+    this.callbacks = {};
+    tn.track_subscription(this);
 
-function get_signaller(tn){
-    var host = signallers[Math.floor(Math.random()*signallers.length)];
-    var signaller = io(host);
-    signaller.on("disconnect", function() {
-        var callbacks = false;
-        if (this.signaller != undefined) {
-            callbacks = this.signaller._callbacks;
+    this.on = function(event, callback) {
+        if (this.callbacks[event] == undefined) {
+            this.callbacks[event] = [];
         }
+        this.callbacks[event].push(callback);
+    }
+
+    this.trigger = function(event, data) {
+        for (var i in this.callbacks[event]) {
+            this.callbacks[event][i](data);
+        }
+    }
+
+    // offer a socket to this sub. Returns true if socket should be connected to
+    this.offer_socket = function(socket) {
+        if (this.connections.length < this.max_connections) {
+            return true;
+        }
+        else {
+            this.add_relevant_socket(socket);
+        }
+    }
+
+    // Placeholder function for if you wanted to prioritize the socket queue order
+    this.add_relevant_socket = function(socket) {
+        this.relevant_sockets.push(socket);
+    }
+
+    this.add_connection = function(id, peer){
+        peer.on("data", function(data) {
+            this.handle_message(data, peer);
+        }.bind(this));
+        if (this.backlog) {
+            if (peer.connected) {
+                peer.send(JSON.stringify({
+                    type: "backlog_request",
+                    query: this.query
+                }));
+            }
+            else {
+                // a hack to fix a simplepeer bug
+                // basically, sometimes the "connect" event isn't called even though the
+                // datachannel is connected. To combat this, we just set a new
+                // ondatachannel callback, and manually call the original callback
+                var simplepeer_callback = peer._pc.ondatachannel;
+                peer._pc.ondatachannel = function (event){
+                    simplepeer_callback(event);
+                    // a timeout is needed here to drop the send method to the end of the
+                    // call stack. Note that the timeout duration is 0ms and should not cause
+                    // timing issues
+                    setTimeout(function(){
+                        peer.send(JSON.stringify({
+                            type: "backlog_request",
+                            query: this.query
+                        }));
+                    }.bind(this), 0);
+                }.bind(this)
+            }
+        }
+        var disconnect = function() {
+            // we lost a peer connection
+            // make new connections to replace the lost connection
+            this.heal();
+        }.bind(this);
+        peer.on("close", disconnect);
+        peer.on("error", disconnect);
+        this.connections.push(peer);
+    }
+
+    this.send = function(message){
+        if (!this.seen_message(message)) {
+            this.messages.push(message);
+        }
+        this.connections.forEach(function(peer){
+            if (peer._channelReady) {
+                peer.send(JSON.stringify({
+                    type: "data",
+                    data: message
+                }));
+            }
+            else {
+                this.heal();
+            }
+        }.bind(this))
+    }
+
+    this.seen_message = function(message) {
+        var seen = false;
+        this.messages.forEach(function(log) {
+            if (JSON.stringify(log) == JSON.stringify(message)) {
+                seen = true;
+            }
+        });
+        return seen;
+    }
+
+    this.handle_message = function(data, from_peer) {
+        var message = JSON.parse(data);
+        if (message.type == "data") {
+            if (match_queries(message.data, this.query)) {
+                if (!this.seen_message(message.data)) {
+                    this.messages.push(message.data);
+                    this.trigger("message", message.data);
+                    // send the message to other peers
+                    this.send(message.data);
+                }
+            }
+        }
+        else if (message.type == "backlog_request") {
+            // make a list of all the messages we've recived that match the request
+            var backlogs = [];
+            this.messages.forEach(function(backlog) {
+                if (match_queries(backlog, message.query)) {
+                    backlogs.push(backlog);
+                }
+            }.bind(this));
+            from_peer.send(JSON.stringify({
+                type: "backlog",
+                backlog: this.messages
+            }));
+        }
+        else if (message.type == "backlog") {
+            message.backlog.forEach(function(backlog){
+                if (!this.seen_message(backlog)) {
+                    this.messages.push(backlog);
+                    this.trigger("backlog", backlog);
+                }
+            }.bind(this));
+        }
+    }
+
+    this.heal = function() {
+        // Remove all dead connections
+        for (var i in this.connections) {
+            var peer = this.connections[i];
+            if (!peer._channelReady) {
+                this.connections.splice(i,1);
+            }
+        }
+        // Connect to new peers
+        // while we have less than the desired amount of peers
+        for (var i = 0; i < this.max_connections - this.connections.length; i++) {
+            // connect to the last socket on the list and remove it
+            if (this.relevant_sockets.length > 0) {
+                this.tn.initiate_connection(this.relevant_sockets.pop());
+            }
+        }
+    }
+}
+
+function TaiiNet() {
+    this.get_signaller = function(callbacks) {
+        log("getting signaller");
+        // select random signaller
+        var host = signallers[Math.floor(Math.random()*signallers.length)];
+        this.signaller = io(host);
+        // add all the callbacks from the previous signaller
         if (callbacks) {
             this.signaller._callbacks = callbacks;
         }
-        console.log("Signaller is down, retrying");
-        get_signaller(this);
-    }.bind(tn))
-    tn.signaller = signaller;
-}
-
-// represents a subscription to some data
-function Subscription(query, tn){
-    this.query = query;
-    this.tn = tn;
-    this.connections = {};
-    this.seed_limit = 6;
-    this.seeding = 0;
-    this.min_relevancy = 100;
-    this.messages = [];
-    this.backlog_requesters = [];
-    this.ready = false;
-    this.missed_messages = [];
-    this.out = 0;
-    this.tot = 0;
-
-    // called when new sockets are available
-    this.add_socket = function(socket) {
-        // only send out connection requests to a certain number of people
-        if (this.seeding < this.seed_limit && socket.id != this.tn.signaller.id){
-            // check if the query matches ours
-            // check if the query matches ours
-            if (match_queries(this.query, socket.query) >= this.min_relevancy){
-                /*
-                var dc = this.tn.create_connection(socket);
-                this.add_dc(socket.id, socket.query, dc);
-                this.seeding++;
-                */
-                if (this.out < 3 && this.tot < 7){
-                    this.out++;
-                    console.log("getting status")
-                    this.tn.signal(socket.id, {
-                        type: "get_status",
-                        query: this.query
-                    })
-                }
-            }
-        }
+        this.signaller.on("disconnect", function() {
+            var callbacks = this.signaller._callbacks;
+            log("Signaller is down, retrying");
+            setTimeout(function(){
+                this.get_signaller(callbacks);
+            }.bind(this), 1000)
+        }.bind(this));
     }
-
-    // called when a new dc is made
-    this.add_dc = function(id, query, dc) {
-        this.tot++;
-        dc.onclose = function() {
-            this.seeding--;
-            // if the last DC leaves, start caching messages for when we connect
-            if (this.tn.clients < 1) {
-                this.ready = false;
-            }
-        }.bind(this)
-        var onopen = function() {
-            this.connections[id] = dc;
-            if (!this.ready) {
-                // when the first datachannel opens
-                this.trigger("ready");
-                this.missed_messages.forEach(function(message){
-                    this.send(message);
-                }.bind(this));
-                this.missed_messages = [];
-                this.ready = true;
-                // ask for the message we missed
-                if (this.get_backlog) {
-                    this.send({}, "request_backlog")
-                }
-            }
-        }.bind(this)
-        if (dc.readyState == "open") {
-            onopen()
-        }
-        else {
-            dc.onopen = onopen;
-        }
-        // data channel MailRoom
-        dc.onmessage = function(message){
-            var data = JSON.parse(message.data);
-            // if we've seen this message before
-            if (data._type == "message") {
-                if (this.messages.indexOf(message.data) >= 0) {
-                    return;
-                }
-                // if the message doesn't match our query
-                if (match_queries(data, this.query) < this.min_relevancy) {
-                    return;
-                }
-                this.trigger("data", message);
-                // tell the other connections
-                this.send(data);
-            }
-            else if (data._type == "request_backlog") {
-                console.log("peer requests backlog")
-                this.backlog_requesters.push(message.target);
-                // request backlogs if we haven't already
-                if (this.got_backlog == undefined) {
-                    this.send({query: this.query}, "request_backlog");
-                    this.got_backlog = true;
-                }
-                // send the requester all of our logs
-                this.messages.forEach(function(backlog) {
-                    var backlog = JSON.parse(backlog);
-                    if (backlog._type == "message") {
-                        message.target.send(JSON.stringify({
-                            _type: "backlog", backlog: backlog
-                        }));
-                    }
-                })
-            }
-            else if (data._type == "backlog") {
-                if (this.messages.indexOf(message.data) >= 0) {
-                    return;
-                }
-                // have we seen this message before
-                if (this.messages.indexOf(data.backlog) >= 0) {
-                    return;
-                }
-                if (this.messages.indexOf(JSON.parse(message.data).backlog) < 0) {
-                    // send the message to our backlog requesters
-                    for (var i in this.backlog_requesters) {
-                        var requester = this.backlog_requesters[i];
-                        if (requester.readyState == "open") {
-                            requester.send(message.data);
-                        }
-                        else {
-                          // remove the dc if it's not open
-                          delete this.backlog_requesters[i];
-                        }
-                    }
-                }
-                this.messages.push(JSON.stringify(JSON.parse(message.data).backlog))
-                // call the blacklog event
-                this.trigger("backlog", message);
-            }
-            this.messages.push(message.data);
-        }.bind(this)
-        this.trigger("new_connection", {id:id, dc:dc, sub:this});
-    }
-
-    this.send = function(data, type) {
-      data._type = type || "message";
-      // if we try to send a message before the first connection, just add it
-      // to a list and send it when we connect
-      if (!this.ready) {
-          this.missed_messages.push(data);
-          return;
-      }
-      // tell the other connections
-      for (var i in this.connections) {
-        var connection = this.connections[i];
-        if (connection.readyState == "open") {
-            connection.send(JSON.stringify(data));
-        }
-        else {
-          // remove the dc if it's not open
-          delete this.connections[i];
-        }
-      }
-      this.messages.push(JSON.stringify(data));
-    }
-
-    this.events = [];
-    this.on = function(event, callback){
-        if (this.events[event] == undefined){
-            this.events[event] = [];
-        }
-        this.events[event].push(callback);
-    }
-
-    this.trigger = function(event, data){
-        if (this.events[event] != undefined){
-            for (var i in this.events[event]){
-                var callback = this.events[event][i];
-                callback(data);
-            }
-        }
-    }
-}
-
-// Handles connections to and from peer connections via the signaller
-function TaiiNet(){
-    get_signaller(this);
+    this.get_signaller();
+    // a list of the subscriptions we need to offer connections to
     this.subscriptions = [];
     this.pcs = {};
-    this.clients = 0;
-    this.max_clients = 7;
 
-    this.signaller.on("socket_broadcast", function(socket) {
-        console.log("got broadcast")
-        this.subscriptions.forEach(function(sub){
-            sub.add_socket(socket);
-        });
-    }.bind(this))
-
-    // returns a subscription object to the query
-    this.subscribe = function(query, get_backlog) {
-        var sub = new Subscription(query, this);
-        sub.get_backlog = get_backlog || false;
-        this.subscriptions.push(sub);
-        this.signaller.on("connect", function(){
-            // tell the this.signaller to send us new sockets
-            this.signaller.emit("get_sockets", {
-                query: query
-            });
-            // tell people we're subscribing
-            this.signaller.emit("socket_broadcast", [{
-                query: query,
-                id: this.signaller.id
-            }]);
-        }.bind(this))
+    // Returns an initialized subscription object for the given query
+    this.subscribe = function(query, backlog) {
+        var sub = new Subscription(this, query, backlog);
         return sub;
     }
 
-    // initiates a connection to the node at the specified socket
-    // returns a datachannel to that node
-    this.create_connection = function(socket) {
-        var localConnection = new SimplePeer({initiator: true});
-        this.pcs[socket.id] = localConnection;
-        localConnection.on("signal", function (data) {
-            this.signal(socket.id, {
-                type: "signal",
-                data: data,
-                query: socket.query
+    // Signs a subscription object up for updates
+    this.track_subscription = function(sub) {
+        this.subscriptions.push(sub);
+        this.signaller.on("connect", function() {
+            // tell the this.signaller to send us new sockets
+            this.signaller.emit("get_sockets", {
+                query: sub.query
             });
+            // tell people we're subscribing
+            // there's a bit of polling fuckery here because socketio tells us it's ready
+            // sometimes when it doesn't have an id
+            var when_id_poll = function(){
+                if (this.signaller.id != undefined) {
+                    this.signaller.emit("socket_broadcast", [{
+                        query: sub.query,
+                        id: this.signaller.id
+                    }]);
+                }
+                else {
+                    setTimeout(function(){
+                        when_id_poll();
+                    }.bind(this), 1000)
+                }
+            }.bind(this);
+            when_id_poll();
         }.bind(this));
-        return localConnection;
     }
 
-    // The MailRoom
-    // handle messages from other nodes.
-    this.signaller.on("message", function(message) {
-        console.log("got " + message.data.type)
-        if (message.data.type == "get_status") {
-            console.log("getting status")
-            this.signal(message.from_id, {
-                type: "status",
-                available: this.clients < this.max_clients,
-                query: message.data.query
-            })
-        }
-        if (message.data.type == "status") {
-            if (message.data.available) {
-                var dc = this.create_connection({
-                    id: message.from_id,
-                    query: message.data.query
-                });
-                this.subscriptions.forEach(function(sub) {
-                    sub.add_dc(message.from_id, message.data.query, dc);
-                    sub.seeding++;
-                })
-                this.clients++;
-            }
-        }
-        if (message.data.type == "signal") {
-            if (this.pcs[message.from_id] == undefined) {
-                var remoteConnection = new SimplePeer();
-                this.pcs[message.from_id] = remoteConnection;
-                remoteConnection.on("signal", function(data) {
-                    this.signal(message.from_id, {
-                        type: "signal",
-                        data: data,
-                        query: message.data.query
-                    });
-                }.bind(this));
-                remoteConnection._pc.ondatachannel = function(dc){
-                    this.subscriptions.forEach(function(sub) {
-                        sub.seeding++;
-                        if (match_queries(sub.query, message.data.query) >= sub.min_relevancy) {
-                            sub.add_dc(
-                                message.from_id,
-                                message.data.query,
-                                dc.channel || dc
-                            );
-                        }
-                    })
-                }.bind(this)
-                this.clients++;
-            }
-            else {
-                var remoteConnection = this.pcs[message.from_id];
-            }
-            remoteConnection.signal(message.data.data);
-        }
-        else if (message.data.type == "answer") {
-            console.log(this.pcs[message.from_id])
-            this.pcs[message.from_id].setRemoteDescription(
-                new RTCSessionDescription(message.data.answer)
-            ).catch(console.log)
-        }
-        else if (message.data.type == "ice_candidate") {
-            var pc = this.pcs[message.from_id];
-            pc.addIceCandidate(message.data.candidate);
-        }
+    // when a new socket makes itsself available
+    this.signaller.on("socket_broadcast", function(socket) {
+        // connect to the socket if required
+        this.initiate_connection(socket);
     }.bind(this))
-    this.signal = function(id, data){
-        this.signaller.emit("send_message", {
-            to_id: id,
-            from_id: this.signaller.id,
-            data: data
+
+    // initiates a peer connection
+    this.initiate_connection = function(socket) {
+        // get a list of all the relevant subscriptions
+        var subs = [];
+        this.subscriptions.forEach(function(sub) {
+            if (socket.id != this.signaller.id && match_queries(sub.query, socket.query)) {
+                // offer this socket to the sub
+                if (sub.offer_socket(socket)) {
+                    subs.push(sub);
+                }
+            }
+        }.bind(this));
+        if (subs.length <= 0) {
+            // if this peer is not relevant to any subs, why connect to it?
+            // (I mean, you could also ask why initiate a connection, but I think this way
+            // stops more mistakes)
+            return false;
+        }
+        // make a new connection if no connection exists
+        if (this.pcs[socket.id] == undefined) {
+            var peer = new SimplePeer({initiator: true});
+            this.add_peer_callbacks(peer, socket.id, socket.query, subs);
+            this.pcs[socket.id] = peer;
+        }
+        else {
+            var peer = this.pcs[socket.id];
+        }
+        // notify the subs
+        subs.forEach(function(sub) {
+            sub.add_connection(socket.id, peer);
         })
     }
+
+    this.signal = function(to_id, data, type) {
+        data.type = type || "message";
+        this.signaller.emit("send_message", {
+            to_id : to_id,
+            from_id: this.signaller.id,
+            data: data
+        });
+    }
+
+    // adds the callbacks to initialize a peer
+    this.add_peer_callbacks = function(peer, id, query) {
+        peer.on("signal", function(data) {
+            log("sending signal");
+            this.signal(id, {
+                signal_data: data,
+                query: query
+            }, "signal");
+        }.bind(this));
+        // handle disconnections
+        var remove_peer = function(e) {
+            delete this.pcs[id];
+        }
+        peer.on("close", remove_peer.bind(this));
+        peer.on("error", remove_peer.bind(this));
+    }
+
+    this.signaller.on("message", function(message) {
+        if (message.data.type == "signal") {
+            if (this.pcs[message.from_id] == undefined) {
+                // this is the first signal from this id
+                var peer = new SimplePeer();
+                this.add_peer_callbacks(peer, message.from_id, message.data.query);
+                this.pcs[message.from_id] = peer;
+                // add this connection to relevant subs
+                this.subscriptions.forEach(function(sub) {
+                    if (match_queries(sub.query, message.data.query)) {
+                        sub.add_connection(message.from_id, peer);
+                    }
+                })
+            }
+            else {
+                var  peer = this.pcs[message.from_id];
+            }
+            log("got signal");
+            peer.signal(message.data.signal_data);
+        }
+    }.bind(this))
 }
 
 function all_keys_start_with(obj) {
