@@ -1,12 +1,13 @@
 import json
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 from socketIO_client import SocketIO as SocketIO_client
 from socketIO_client import BaseNamespace
 import node_discovery
 import eventlet
 import sys
-#eventlet.monkey_patch()
+eventlet.monkey_patch()
 our_url = "£.ga:5000"
 nodes = [
     # List of nodes to updates and receive updates from
@@ -16,7 +17,8 @@ class ThisIsDumb(BaseNamespace):
     pass
 
 app = Flask(__name__)
-socket = SocketIO(app)
+cors = CORS(app)
+socket = SocketIO(app, cors_allowed_origins="*")
 # List of connected clients by query {query: [socket ids...]...}
 socket_collection = {}
 socket_ids = []
@@ -163,4 +165,4 @@ def disconnect():
     remove_socket(request.sid)
 
 if __name__ == '__main__':
-    socket.run(app, debug=False, host="0.0.0.0")
+    socket.run(app, debug=True, host="localhost")
