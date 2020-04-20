@@ -83,6 +83,15 @@ WebRTC connections due to the more efficient distribution of stream uploading.
 - Create demo application for showcasing
 - Implement video/audio streaming
 
+## Getting Started
+
+To install and run the TaiiNet demo run:
+
+```bash
+sudo pip install -r requirements.txt
+python signaler.py
+```
+Then open one of the demo html files!
 
 ## Disclaimer
 TaiiNet is in active development. Everything is subject to change until release.
