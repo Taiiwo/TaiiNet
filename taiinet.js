@@ -1,7 +1,6 @@
 // a list of signallers to use by default. These are signallers the author trusts
 // a malicious signal node could DoS the network by refusing to intiate requests
 var signallers = [
-    //"ws://167.160.189.251:5000/api/1",
     "ws://localhost:5000/api/1"
 ];
 
