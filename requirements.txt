@@ -2,4 +2,3 @@ flask
 flask_socketIO
 socketIO_client
 eventlet
-flask_CORS
