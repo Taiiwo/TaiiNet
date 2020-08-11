@@ -6,17 +6,20 @@ from socketIO_client import BaseNamespace
 import node_discovery
 import eventlet
 import sys
-#eventlet.monkey_patch()
-our_url = "£.ga:5000"
+
+# eventlet.monkey_patch()
+our_url = "£.ga:5000"  # if connecting to other nodes, write your hostname here
 nodes = [
     # List of nodes to updates and receive updates from
 ]
 
+
 class ThisIsDumb(BaseNamespace):
     pass
 
+
 app = Flask(__name__)
-socket = SocketIO(app)
+socket = SocketIO(app, cors_allowed_origins="*")
 # List of connected clients by query {query: [socket ids...]...}
 socket_collection = {}
 socket_ids = []
@@ -32,6 +35,7 @@ for node in nodes:
     node_socket.emit("add_signaller", {"host": our_url})
     node_sockets.append(api_namespace)
 
+
 @socket.on("add_signaller")
 def add_signaller(signaller):
     print("adding signaller")
@@ -40,9 +44,12 @@ def add_signaller(signaller):
     api_namespace = node_socket.define(ThisIsDumb, "/api/1")
     node_sockets.append(api_namespace)
 
+
 """
 Adds an array of web sockets to the signal network
 """
+
+
 @socket.on("socket_broadcast", namespace="/api/1")
 def socket_broadcast(socket_data):
     print("socket_broadcast")
@@ -68,24 +75,32 @@ def socket_broadcast(socket_data):
             new = True
             # update all the socket subscribers that match this query
             for query in socket_subscribers:
-                relevancy = node_discovery.match_queries(json.loads(query),
-                                                         sock["query"])
+                relevancy = node_discovery.match_queries(
+                    json.loads(query), sock["query"]
+                )
                 if relevancy:
                     for socket_id in socket_subscribers[query]:
-                        emit("socket_broadcast", {
-                            "id": sock["id"],
-                            "query": sock["query"],
-                            "relevancy": relevancy
-                        }, room=socket_id)
+                        emit(
+                            "socket_broadcast",
+                            {
+                                "id": sock["id"],
+                                "query": sock["query"],
+                                "relevancy": relevancy,
+                            },
+                            room=socket_id,
+                        )
             # update the other signaller nodes
             for node_socket in node_sockets:
                 node_socket.emit("socket_broadcast", [sock])
     return "1"
 
+
 """
 sends a message to a specified socket
 """
 messages_received = []
+
+
 @socket.on("send_message", namespace="/api/1")
 def answer_broadcast(message_data):
     print("send_message")
@@ -113,10 +128,13 @@ def answer_broadcast(message_data):
             node_socket.emit("send_message", message_data)
     return 1
 
+
 """
 Subscribes to sockets responding to a subset of the given query
 """
 socket_subscribers = {}
+
+
 @socket.on("get_sockets", namespace="/api/1")
 def get_sockets(request_data):
     print("get_sockets")
@@ -145,6 +163,7 @@ def get_sockets(request_data):
     """
     return 1
 
+
 def remove_socket(sid):
     for query in socket_collection:
         for socket_id in socket_collection[query]:
@@ -156,11 +175,13 @@ def remove_socket(sid):
             if socket_id == sid:
                 socket_subscribers[query].remove(socket_id)
 
-@socket.on('disconnect', namespace="/api/1")
+
+@socket.on("disconnect", namespace="/api/1")
 def disconnect():
     print("@@@@@@@ client disconnected @@@@@@@@@@@")
     # remove all the references to this socket
     remove_socket(request.sid)
 
-if __name__ == '__main__':
-    socket.run(app, debug=False, host="0.0.0.0")
+
+if __name__ == "__main__":
+    socket.run(app, debug=True, host="0.0.0.0")
