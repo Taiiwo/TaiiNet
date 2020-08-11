@@ -2,8 +2,10 @@
 // a malicious signal node could DoS the network by refusing to intiate requests
 var signallers = [
     //"ws://167.160.189.251:5000/api/1",
-    "ws://192.168.0.14:5000/api/1"
+    "ws://localhost:5000/api/1"
 ];
+
+
 
 var debug = true;
 function log(thing) {
@@ -92,10 +94,22 @@ function Subscription(tn, query, backlog) {
         this.connections.push(peer);
     }
 
+    this.hash = function(text) {
+        var hasher = new jsSHA("SHA-512", "TEXT");
+        hasher.update(text);
+        return hasher.getHash("B64");
+    }
+
     this.send = function(message){
-        if (!this.seen_message(message)) {
-            this.messages.push(message);
+        if (this.seen_message(message)) {
+            return 0;
         }
+        if (match_queries(message, this.query) < 100) {
+            console.error("You cannot send a message that does not match this sub's query");
+        }
+        message._hash = this.current_hash;
+        this.messages.push(message);
+        this.current_hash = this.hash(JSON.stringify(message));
         this.connections.forEach(function(peer){
             if (peer._channelReady) {
                 peer.send(JSON.stringify({
@@ -122,9 +136,12 @@ function Subscription(tn, query, backlog) {
     this.handle_message = function(data, from_peer) {
         var message = JSON.parse(data);
         if (message.type == "data") {
-            if (match_queries(message.data, this.query)) {
+            if (match_queries(message.data, this.query) == 100) {
                 if (!this.seen_message(message.data)) {
-                    this.messages.push(message.data);
+                    if (message.data._hash != this.current_hash) {
+                        log("got fake message!");
+                        return 0;
+                    }
                     this.trigger("message", message.data);
                     // send the message to other peers
                     this.send(message.data);
@@ -135,7 +152,7 @@ function Subscription(tn, query, backlog) {
             // make a list of all the messages we've recived that match the request
             var backlogs = [];
             this.messages.forEach(function(backlog) {
-                if (match_queries(backlog, message.query)) {
+                if (match_queries(backlog, message.query) == 100) {
                     backlogs.push(backlog);
                 }
             }.bind(this));
@@ -147,7 +164,12 @@ function Subscription(tn, query, backlog) {
         else if (message.type == "backlog") {
             message.backlog.forEach(function(backlog){
                 if (!this.seen_message(backlog)) {
+                    if (backlog._hash != this.current_hash) {
+                        log("got fake backlog!");
+                        return 0;
+                    }
                     this.messages.push(backlog);
+                    this.current_hash = this.hash(JSON.stringify(backlog));
                     this.trigger("backlog", backlog);
                 }
             }.bind(this));
@@ -304,7 +326,7 @@ function TaiiNet() {
                 this.pcs[message.from_id] = peer;
                 // add this connection to relevant subs
                 this.subscriptions.forEach(function(sub) {
-                    if (match_queries(sub.query, message.data.query)) {
+                    if (match_queries(sub.query, message.data.query) == 100) {
                         sub.add_connection(message.from_id, peer);
                     }
                 })
@@ -341,7 +363,7 @@ function no_keys_start_with(obj) {
 }
 // Returns true if query 1 matches query 2
 // aka: data that matches query1 can also match query2
-// aka: query1 matches a smaller criteria of data that also matches query2
+// aka: query1 matches a more specific criteria of data that also matches query2
 function match_queries(query1, query2){
     var matches = true;
     var relevancy = 100;
@@ -445,7 +467,7 @@ function match_queries(query1, query2){
     // That being said, it's perfectly useful as a priority indicator
     for (var key in query2) {
         var value = query2[key];
-        if (query1[key] == undefined) {
+        if (query1[key] == undefined && key[0] != "$") {
             relevancy /= 2
         }
     }
