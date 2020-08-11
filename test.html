@@ -5,7 +5,6 @@
         <title>TaiiNet</title>
         <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.js"></script>
         <script src="taiinet.js"></script>
     </head>
     <body>
@@ -15,6 +14,7 @@
             var tn = new TaiiNet();
             // tell the network what data we want
             var sub = tn.subscribe({type: "tweet"}, true);// true means get logs, too
+            //var sub2 = tn.subscribe({type: "news"});
             // when we get a message
             sub.on("data", function(message){
                 console.log(message);
