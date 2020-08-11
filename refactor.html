@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <meta charset="utf-8">
+        <title>TaiiNet</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsSHA/2.3.1/sha512.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.1.2/simplepeer.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/mingo@2.2.2/dist/mingo.min.js"></script>
+        <script src="refactor.js"></script>
+    </head>
+    <body>
+        <div id="tweets"></div>
+        <script>
+            // connect to signaller
+            var tn = new TaiiNet();
+            // tell the network what data we want
+            var sub = tn.subscribe({type: "tweet"}, true);// true means get logs, too
+            //var sub2 = tn.subscribe({type: "news"});
+            // when we get a message
+            sub.on("message", function(message){
+                console.log(message);
+                // show the tweet
+                add_tweet(message.tweet)
+            });
+            // when we get a backlog message
+            sub.on("backlog", function(backlog){
+              console.log(backlog);
+              // show the tweet
+              add_tweet(backlog.tweet)
+            })
+
+            // super fancy GUI nonesense
+            function send_tweet(tweet) {
+                sub.send({type: "tweet", tweet: tweet});
+                add_tweet(tweet);
+            }
+
+            function add_tweet(tweet) {
+                var tweets = document.querySelector("#tweets");
+                tweets.innerHTML = tweets.innerHTML + tweet + "<br />"
+            }
+            function tweetbutton(){
+                send_tweet(document.querySelector("#tweet").value);
+            }
+        </script>
+        <input id="tweet" /><button onclick="tweetbutton()">Tweet!</button>
+    </body>
+</html>
