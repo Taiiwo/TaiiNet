@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <meta charset="utf-8">
+        <title>TaiiNet</title>
+        <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+        <script src="taiinet.js"></script>
+        <!--Import Google Icon Font-->
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+        <!--Import materialize.css-->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0-beta/css/materialize.min.css">
+
+        <!--Let browser know website is optimized for mobile-->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <style>
+            #servers {
+            }
+            #channels {
+            }
+            #chat {
+                height: 99vh;
+                position: relative;
+            }
+            #message-box-area {
+                position: absolute;
+                bottom: 0;
+                width: 100%;
+            }
+        </style>
+    </head>
+    <body class="row">
+        <ul id="slide-out" class="sidenav">
+            <li><a class="subheader">Servers</a></li>
+            <div id="servers">
+                <div class="chip">
+                    add server
+                    <i class="close material-icons">add</i>
+                </div>
+            </div>
+            <li><a class="subheader">Channels</a></li>
+            <div id="channels">
+                <a class="btn-floating btn-large waves-effect waves-light red modal-trigger" href="#modal2">
+                    <i class="material-icons">add</i>
+                </a>
+            </div>
+        </ul>
+        <!-- Modal Structure -->
+        <div id="modal1" class="modal bottom-sheet">
+            <div class="modal-content">
+                <h4>Create or Join a Server</h4>
+                <p>Joins a server. If the server doesn't exist, it creates a new one!</p>
+                <div class="input-field col s6">
+                      <input value="HugBox" id="server_name" type="text" class="validate">
+                      <label class="active" for="server_name">Server Name</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a class="modal-action modal-close waves-effect waves-green btn-flat">Create / Join</a>
+            </div>
+        </div>
+
+        <div class="col s12" id="chat">
+            <a href="#" data-target="slide-out" class="btn-floating btn-large waves-effect waves-light sidenav-trigger">
+                <i class="material-icons">menu</i>
+            </a>
+            <div class="row valign-wrapper" id="message-box-area">
+                <div class="input-field col s11">
+                    <input value="a" id="message-box" type="text" class="validate">
+                    <label class="active" for="message-box">Send a message</label>
+                </div>
+                <a class="waves-effect waves-light btn col s1"><i class="material-icons left">send</i>Send</a>
+            </div>
+
+        </div>
+        <script>
+            // connect to signaller
+            var tn = new TaiiNet();
+
+            var servers = document.querySelector("#servers");
+            var channels = document.querySelector("#channels");
+            var chat = document.querySelector("#chat");
+
+            add_server("HugBox", "https://cdn.discordapp.com/icons/369953651185287178/570b0adaf3ddc1637dc5c86a411f548e.jpg");
+            add_channel("Text Posting");
+            function add_server(title, img){
+                var html = '<div id="server" class="chip">' +
+                    '<img src="'+ img +'" alt="Server Icon">' +
+                    title +
+                    '<i class="close material-icons">close</i>' +
+                '</div>';
+                servers.innerHTML = html + servers.innerHTML + "<br />"
+            }
+            function add_channel(title){
+                var html = '<a class="waves-effect waves-light btn"><i class="material-icons left">cloud</i>'+ title +'</a>';
+                channels.innerHTML = channels.innerHTML + html + "<br />"
+            }
+        </script>
+        <!--JavaScript at end of body for optimized loading-->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0-beta/js/materialize.min.js"></script>
+        <script>
+            var elem = document.querySelector('.modal');
+            var instance = M.Modal.init(elem, {});
+
+          var elem = document.querySelector('.sidenav');
+          var instance = M.Sidenav.init(elem, {});
+        </script>
+    </body>
+</html>
