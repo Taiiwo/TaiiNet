@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <meta charset="utf-8">
+        <title>TaiiNet</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsSHA/2.3.1/sha512.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.1.2/simplepeer.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+        <script src="taiinet.js"></script>
+    </head>
+    <body>
+        <div id="tweets"></div>
+        <div style="float:right" id="tweets2"></div>
+        <script>
+            // connect to signaller
+            var tn = new TaiiNet();
+            // tell the network what data we want
+            var sub = tn.subscribe({type: "tweet"}, true);// true means get logs, too
+            // when we get a message
+            sub.on("message", function(message){
+                console.log(message);
+                // show the tweet
+                add_tweet(message.tweet)
+            });
+            // when we get a backlog message
+            sub.on("backlog", function(backlog){
+                console.log(backlog);
+                // show the tweet
+                add_tweet(backlog.tweet);
+            })
+
+            // Use multiple subscriptions in the same instance
+            var sub2 = tn.subscribe({
+                $or: [ // here we sub to both types of tweets
+                    {type: "tweet"},
+                    {type: "tweet2"}
+                ]
+            });
+
+            // when we get a message
+            sub2.on("message", function(message){
+                console.log(message);
+                // show the tweet
+                add_tweet2(message.tweet)
+            });
+            // when we get a backlog message
+            sub2.on("backlog", function(backlog){
+                console.log(backlog);
+                // show the tweet
+                add_tweet2(backlog.tweet);
+            })
+
+            // super fancy GUI nonesense
+            function send_tweet(tweet) {
+                sub.send({type: "tweet", tweet: tweet});
+                add_tweet(tweet);
+            }
+
+            function add_tweet(tweet) {
+                var tweets = document.querySelector("#tweets");
+                tweets.innerHTML = tweets.innerHTML + tweet + "<br />"
+            }
+            function tweetbutton(){
+                send_tweet(document.querySelector("#tweet").value);
+            }
+            function send_tweet2(tweet) {
+                sub2.send({type: "tweet2", tweet: tweet});
+                add_tweet2(tweet);
+            }
+
+            function add_tweet2(tweet) {
+                var tweets = document.querySelector("#tweets2");
+                tweets.innerHTML = tweets.innerHTML + tweet + "<br />"
+            }
+            function tweet2button(){
+                send_tweet2(document.querySelector("#tweet2").value);
+            }
+        </script>
+        <input id="tweet" /><button onclick="tweetbutton()">Tweet!</button>
+        <input id="tweet2" /><button onclick="tweet2button()">Tweet2!</button>
+    </body>
+</html>
