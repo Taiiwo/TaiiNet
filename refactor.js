@@ -177,8 +177,8 @@ function Subscription(tn, query, backlog) {
                 backlog: this.messages
             }));
         }
-        else if (message.type == "backlog") {
-            message.backlog.forEach(function(backlog){
+        else if (data.type == "backlog") {
+            data.backlog.forEach(function(backlog){
                 if (!this.seen_message(backlog)) {
                     this.messages.push(backlog);
                     this.trigger("backlog", backlog);
