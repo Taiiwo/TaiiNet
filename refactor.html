@@ -26,12 +26,15 @@
         <div id="tweets"></div>
         <script>
             // connect to signaller
+            M.toast({html: "Connecting to signaller..."})
             var tn = new TaiiNet();
             // tell the network what data we want
+            M.toast({html:"Requesting peers..."})
             var sub = tn.subscribe({type: "tweet"}, true);// true means get logs, too
             //var sub2 = tn.subscribe({type: "news"});
             // when we get a message
             sub.on("message", function(message){
+                M.toast({html:"Got a new tweet", classes: "green"})
                 console.log(message);
                 // show the tweet
                 add_tweet(message.tweet)
@@ -41,6 +44,9 @@
               console.log(backlog);
               // show the tweet
               add_tweet(backlog.tweet)
+            })
+            sub.on("new-connection", function(connection) {
+                M.toast({html:"New peer connected", classes: "green"});
             })
 
             // super fancy GUI nonesense
