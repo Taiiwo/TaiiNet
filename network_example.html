@@ -96,7 +96,7 @@
                 send_box[0][0].onkeypress = function(event) {
                     if (event.keyCode == 13 || event.which == 13){
                         try {
-                            var message = JSON.parse(send_box[0][0].value)
+                            var message = JSON.parse(send_box[0][0].innerText)
                         }
                         catch {
                             M.toast({html: 'Invalid JSON!'});
