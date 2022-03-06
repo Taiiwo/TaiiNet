@@ -323,6 +323,7 @@ function TaiiNet() {
             }, "signal");
         }.bind(this));
         // handle disconnections
+        socket_subscribers[query_uid].append(request.sid)
         var remove_peer = function(e) {
             delete this.pcs[id];
         }
