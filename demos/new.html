@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="utf-8">
+    <title>TaiiNet</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsSHA/2.3.1/sha512.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.1.2/simplepeer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.slim.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mingo@2.2.2/dist/mingo.min.js"></script>
+
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js"
+        integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44=" crossorigin="anonymous"></script>
+
+    <!--Import Google Icon Font-->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Compiled and minified CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+
+    <!-- Compiled and minified JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+</head>
+
+<body>
+    <div id="tweets"></div>
+    <script type="module">// typing module here is important!!
+        import { TaiiNet } from '../TaiiNet.js';
+        // connect to signaller
+        var tn = new TaiiNet();
+        M.toast({ html: "Connecting to signaller..." })
+        // tell the network what data we want
+        M.toast({ html: "Requesting peers..." })
+        var sub = tn.new(tn.Subscription, { type: "tweet" }, { backlog: true });// true means get logs, too
+        // when we get a message
+        sub.on("data", function (message) {
+            M.toast({ html: "Got a new tweet", classes: "green" })
+            console.log(message);
+            // show the tweet
+            add_tweet(message.tweet)
+        });
+        // when we get a backlog message
+        sub.on("backlog", function (backlog) {
+            console.log(backlog);
+            // show the tweet
+            add_tweet(backlog.tweet)
+        })
+        sub.on("peer-connected", function (connection) {
+            M.toast({ html: "New peer connected", classes: "green" });
+        })
+
+        // super fancy GUI nonesense
+        function send_tweet(tweet) {
+            sub.send({ type: "tweet", tweet: tweet });
+            add_tweet(tweet);
+        }
+
+        function add_tweet(tweet) {
+            $("#tweets").append($("<p>").text(tweet));
+        }
+        $('#tweetbutton').click(() => {
+            send_tweet($("#tweet").val());
+        });
+    </script>
+    <input id="tweet" /><button id="tweetbutton">Tweet!</button>
+</body>
+
+</html>
