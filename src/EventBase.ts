@@ -1,8 +1,6 @@
 type EventHandler = (...args: any[]) => void;
 
-export class EventBase<
-  EventMap extends Record<string, EventHandler> = Record<string, EventHandler>
-> {
+export class EventBase<EventMap extends { [K in keyof EventMap]: EventHandler }> {
   private callbacks: Partial<{ [K in keyof EventMap]: EventMap[K][] }> = {};
 
   on<K extends keyof EventMap>(event: K, callback: EventMap[K]): void {

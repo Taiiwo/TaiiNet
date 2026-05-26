@@ -11,9 +11,9 @@ function testOperator(operator: string, expected: unknown, actual: unknown): boo
     {
       value: {
         [operator]: expected,
-      },
+      } as QueryRecord,
     },
-    { value: actual },
+    { value: actual as QueryRecord[keyof QueryRecord] },
   );
 }
 
