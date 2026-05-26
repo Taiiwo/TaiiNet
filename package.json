@@ -1,0 +1,50 @@
+{
+  "name": "taiinet",
+  "version": "1.0.0",
+  "description": "Fully decentralized peer to peer mesh networking for the browser.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Taiiwo/TaiiNet.git"
+  },
+  "keywords": [
+    "mesh",
+    "p2p",
+    "typescript",
+    "webrtc"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Taiiwo/TaiiNet/issues"
+  },
+  "homepage": "https://github.com/Taiiwo/TaiiNet#readme",
+  "dependencies": {
+    "mingo": "^7.2.1",
+    "simple-peer": "^9.11.1",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/simple-peer": "^9.11.9",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

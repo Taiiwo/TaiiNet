@@ -83,15 +83,42 @@ WebRTC connections due to the more efficient distribution of stream uploading.
 - Create demo application for showcasing
 - Implement video/audio streaming
 
-## Getting Started
+## TypeScript module
 
-To install and run the TaiiNet demo run:
+TaiiNet now ships as a TypeScript package with typed ESM exports.
+
+### Install dependencies
 
 ```bash
-sudo pip install -r requirements.txt
+npm install
+```
+
+### Build the library
+
+```bash
+npm run build
+```
+
+### Run the test suite
+
+```bash
+npm test
+```
+
+The compiled module is written to `dist/` and exports `TaiiNet`,
+`Subscription`, `BacklogSubscription`, `Swarm`, `EventBase`,
+`query_match_data`, and `match_queries`.
+
+## Legacy demo signal server
+
+To install and run the bundled signalling demo:
+
+```bash
+pip install -r requirements.txt
 python signaler.py
 ```
-Then open one of the demo html files!
+
+Then open one of the demo html files.
 
 ## Disclaimer
 TaiiNet is in active development. Everything is subject to change until release.
