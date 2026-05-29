@@ -1,12 +1,12 @@
+import { useEffect } from "react";
 import { act, create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { useEffect } from "react";
 
 import { EventBase } from "../src/EventBase.js";
-import { useTaiiNet, type UseTaiiNetResult } from "../src/useTaiiNet.js";
-import type { ConnectedPeer, QueryRecord, SignalMessage, SocketBroadcast } from "../src/types.js";
+import { TaiiNetProvider, useTaiiNet, type UseSubscriptionResult, type UseTaiiNetResult } from "../src/useTaiiNet.js";
 import type { Subscription } from "../src/Subscription.js";
 import type { TaiiNet } from "../src/TaiiNet.js";
+import type { ConnectedPeer, QueryRecord, SignalMessage, SocketBroadcast } from "../src/types.js";
 
 class FakeSubscription extends EventBase<{
   data: (data: QueryRecord, event: { sid: string; rawEvent: { data: string } }) => void;
@@ -44,47 +44,58 @@ class FakeClient extends EventBase<{
   }
 }
 
+type TweetData = {
+  type: "tweet";
+  body: string;
+};
+
 function Harness({
-  client,
-  onValue,
+  onHookValue,
+  onSubscriptionValue,
 }: {
-  client: FakeClient;
-  onValue: (value: UseTaiiNetResult) => void;
+  onHookValue: (value: UseTaiiNetResult<{ tweet: TweetData }>) => void;
+  onSubscriptionValue: (value: UseSubscriptionResult<TweetData>) => void;
 }) {
-  const value = useTaiiNet({
-    createClient: () => client as unknown as TaiiNet,
-  });
+  const hookValue = useTaiiNet<{ tweet: TweetData }>();
+  const subscriptionValue = hookValue.useSubscription({ type: "tweet" }, { backlog: true });
 
   useEffect(() => {
-    onValue(value);
-  }, [onValue, value]);
+    onHookValue(hookValue);
+  }, [hookValue, onHookValue]);
+
+  useEffect(() => {
+    onSubscriptionValue(subscriptionValue);
+  }, [onSubscriptionValue, subscriptionValue]);
 
   return null;
 }
 
 describe("useTaiiNet", () => {
-  it("exposes network events and subscription helpers", () => {
+  it("supports provider setup and stateful typed subscriptions", () => {
     const client = new FakeClient();
-    const onValue = vi.fn<(value: UseTaiiNetResult) => void>();
+    const onHookValue = vi.fn<(value: UseTaiiNetResult<{ tweet: TweetData }>) => void>();
+    const onSubscriptionValue = vi.fn<(value: UseSubscriptionResult<TweetData>) => void>();
     let renderer: ReturnType<typeof create> | null = null;
 
     act(() => {
-      renderer = create(<Harness client={client} onValue={onValue} />);
+      renderer = create(
+        <TaiiNetProvider createClient={() => client as unknown as TaiiNet}>
+          <Harness onHookValue={onHookValue} onSubscriptionValue={onSubscriptionValue} />
+        </TaiiNetProvider>,
+      );
     });
 
-    const hook = onValue.mock.lastCall?.[0];
-    if (!hook) {
-      throw new Error("Hook result was not captured");
+    const hook = onHookValue.mock.lastCall?.[0];
+    const initialSubscription = onSubscriptionValue.mock.lastCall?.[0];
+    if (!hook || !initialSubscription) {
+      throw new Error("Hook values were not captured");
     }
 
-    const { subscription, unsubscribe } = hook.subscribe(
-      { type: "tweet" },
-      { backlog: true },
-      { onData: vi.fn() },
-    );
+    const { subscription, unsubscribe } = hook.subscribe({ type: "tweet" }, { backlog: true }, { onData: vi.fn() });
 
-    hook.send({ body: "hello" }, subscription);
     hook.signal("peer-1", { ok: true }, "signal");
+    hook.send({ body: "hello" }, subscription);
+    initialSubscription.sendData({ type: "tweet", body: "from-hook" });
 
     act(() => {
       client.trigger("signal", {
@@ -97,16 +108,27 @@ describe("useTaiiNet", () => {
       });
       client.trigger("socket", { id: "peer-2", query: { type: "tweet" } });
       client.swarm.trigger("peer-connected", { sid: "peer-2", send() {} });
+      client.subscriptions[0].trigger(
+        "data",
+        { type: "tweet", body: "incoming" },
+        { sid: "peer-2", rawEvent: { data: "raw" } },
+      );
     });
 
-    const updatedHook = onValue.mock.lastCall?.[0];
+    const updatedHook = onHookValue.mock.lastCall?.[0];
+    const updatedSubscription = onSubscriptionValue.mock.lastCall?.[0];
     expect(updatedHook?.signals).toHaveLength(1);
     expect(updatedHook?.sockets).toHaveLength(1);
     expect(updatedHook?.connectedPeers).toHaveLength(1);
     expect(client.signal).toHaveBeenCalledWith("peer-1", { ok: true }, "signal");
-    expect((subscription as unknown as FakeSubscription).send).toHaveBeenCalledWith({
-      body: "hello",
+    expect((subscription as unknown as FakeSubscription).send).toHaveBeenCalledWith({ body: "hello" });
+    expect(client.subscriptions[0].send).toHaveBeenCalledWith({ type: "tweet", body: "from-hook" });
+    expect(updatedSubscription?.data).toEqual([{ type: "tweet", body: "incoming" }]);
+
+    act(() => {
+      updatedSubscription?.clearData();
     });
+    expect(onSubscriptionValue.mock.lastCall?.[0].data).toEqual([]);
 
     unsubscribe();
 

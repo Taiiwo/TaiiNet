@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { TaiiNet, type TaiiNetOptions } from "./TaiiNet.js";
-import type { ConnectedPeer, QueryRecord, SignalMessage, SocketBroadcast, SwarmDataEvent } from "./types.js";
 import type { Subscription, SubscriptionOptions } from "./Subscription.js";
+import type { ConnectedPeer, QueryRecord, SignalMessage, SocketBroadcast, SwarmDataEvent } from "./types.js";
 
 export interface UseTaiiNetOptions extends TaiiNetOptions {
   createClient?: (options: TaiiNetOptions) => TaiiNet;
+}
+
+export interface TaiiNetProviderProps extends UseTaiiNetOptions {
+  children?: ReactNode;
 }
 
 export interface SubscriptionHandlers {
@@ -15,7 +29,27 @@ export interface SubscriptionHandlers {
   onDownstreamPeer?: (peer: ConnectedPeer) => void;
 }
 
-export interface UseTaiiNetResult {
+export interface UseSubscriptionResult<TData extends QueryRecord> {
+  data: TData[];
+  sendData: (data: TData) => void;
+  clearData: () => void;
+  subscription: Subscription;
+}
+
+export type SubscriptionTypeMap = Record<string, QueryRecord>;
+
+export type UseSubscriptionHook<TSubscriptions extends SubscriptionTypeMap> = {
+  <TType extends keyof TSubscriptions & string>(
+    query: QueryRecord & { type: TType },
+    options?: SubscriptionOptions,
+  ): UseSubscriptionResult<TSubscriptions[TType]>;
+  <TData extends QueryRecord = QueryRecord>(
+    query: QueryRecord,
+    options?: SubscriptionOptions,
+  ): UseSubscriptionResult<TData>;
+};
+
+interface TaiiNetContextValue {
   client: TaiiNet;
   signals: SignalMessage[];
   sockets: SocketBroadcast[];
@@ -28,10 +62,32 @@ export interface UseTaiiNetResult {
     handlers?: SubscriptionHandlers,
   ) => { subscription: Subscription; unsubscribe: () => void };
   send: (data: QueryRecord, subscription?: Subscription) => void;
+  removeSubscription: (subscription: Subscription) => void;
 }
 
-export function useTaiiNet(options: UseTaiiNetOptions = {}): UseTaiiNetResult {
-  const { createClient, ...taiiNetOptions } = options;
+export interface UseTaiiNetResult<TSubscriptions extends SubscriptionTypeMap = SubscriptionTypeMap> {
+  client: TaiiNet;
+  signals: SignalMessage[];
+  sockets: SocketBroadcast[];
+  connectedPeers: ConnectedPeer[];
+  signal: (toId: string, data: unknown, type: string) => void;
+  createSubscription: (query: QueryRecord, options?: SubscriptionOptions) => Subscription;
+  subscribe: (
+    query: QueryRecord,
+    options?: SubscriptionOptions,
+    handlers?: SubscriptionHandlers,
+  ) => { subscription: Subscription; unsubscribe: () => void };
+  send: (data: QueryRecord, subscription?: Subscription) => void;
+  useSubscription: UseSubscriptionHook<TSubscriptions>;
+}
+
+const TaiiNetContext = createContext<TaiiNetContextValue | null>(null);
+
+export function TaiiNetProvider({
+  children,
+  createClient,
+  ...taiiNetOptions
+}: TaiiNetProviderProps) {
   const [signals, setSignals] = useState<SignalMessage[]>([]);
   const [sockets, setSockets] = useState<SocketBroadcast[]>([]);
   const [connectedPeers, setConnectedPeers] = useState<ConnectedPeer[]>([]);
@@ -86,6 +142,10 @@ export function useTaiiNet(options: UseTaiiNetOptions = {}): UseTaiiNetResult {
     };
   }, [client]);
 
+  const removeSubscription = useCallback((subscription: Subscription) => {
+    subscriptionsRef.current.delete(subscription);
+  }, []);
+
   const createSubscription = useCallback(
     (query: QueryRecord, subscriptionOptions: SubscriptionOptions = {}) => {
       const subscription = client.subscribe(query, subscriptionOptions);
@@ -125,35 +185,119 @@ export function useTaiiNet(options: UseTaiiNetOptions = {}): UseTaiiNetResult {
         if (handlers.onDownstreamPeer) {
           subscription.off("downstream-peer", handlers.onDownstreamPeer);
         }
-        subscriptionsRef.current.delete(subscription);
+        removeSubscription(subscription);
       };
 
       return { subscription, unsubscribe };
     },
-    [createSubscription],
+    [createSubscription, removeSubscription],
   );
 
-  const send = useCallback((data: QueryRecord, subscription?: Subscription) => {
-    if (subscription) {
-      subscription.send(data);
-      return;
-    }
+  const send = useCallback(
+    (data: QueryRecord, subscription?: Subscription) => {
+      if (subscription) {
+        subscription.send(data);
+        return;
+      }
 
-    client.swarm.send(data);
-  }, [client]);
+      client.swarm.send(data);
+    },
+    [client],
+  );
 
-  const signal = useCallback((toId: string, data: unknown, type: string) => {
-    client.signal(toId, data, type);
-  }, [client]);
+  const signal = useCallback(
+    (toId: string, data: unknown, type: string) => {
+      client.signal(toId, data, type);
+    },
+    [client],
+  );
+
+  const contextValue = useMemo<TaiiNetContextValue>(
+    () => ({
+      client,
+      signals,
+      sockets,
+      connectedPeers,
+      signal,
+      createSubscription,
+      subscribe,
+      send,
+      removeSubscription,
+    }),
+    [client, connectedPeers, createSubscription, removeSubscription, send, signal, signals, sockets, subscribe],
+  );
+
+  return createElement(TaiiNetContext.Provider, { value: contextValue }, children);
+}
+
+export function useTaiiNet<TSubscriptions extends SubscriptionTypeMap = SubscriptionTypeMap>(): UseTaiiNetResult<TSubscriptions> {
+  const context = useContext(TaiiNetContext);
+
+  if (!context) {
+    throw new Error("useTaiiNet must be used inside TaiiNetProvider");
+  }
+
+  const { createSubscription, removeSubscription } = context;
+
+  const useSubscription = useCallback(
+    <TData extends QueryRecord = QueryRecord>(query: QueryRecord, options: SubscriptionOptions = {}) => {
+      const queryKey = JSON.stringify(query);
+      const optionsKey = JSON.stringify(options);
+      const subscription = useMemo(
+        () =>
+          createSubscription(
+            JSON.parse(queryKey) as QueryRecord,
+            JSON.parse(optionsKey) as SubscriptionOptions,
+          ),
+        [createSubscription, queryKey, optionsKey],
+      );
+      const [data, setData] = useState<TData[]>([]);
+
+      useEffect(() => {
+        setData([]);
+
+        const onData = (payload: QueryRecord) => {
+          setData((current) => [...current, payload as TData]);
+        };
+
+        subscription.on("data", onData);
+
+        return () => {
+          subscription.off("data", onData);
+          removeSubscription(subscription);
+        };
+      }, [removeSubscription, subscription]);
+
+      const sendData = useCallback(
+        (payload: TData) => {
+          subscription.send(payload);
+        },
+        [subscription],
+      );
+
+      const clearData = useCallback(() => {
+        setData([]);
+      }, []);
+
+      return {
+        data,
+        sendData,
+        clearData,
+        subscription,
+      };
+    },
+    [createSubscription, removeSubscription],
+  ) as UseSubscriptionHook<TSubscriptions>;
 
   return {
-    client,
-    signals,
-    sockets,
-    connectedPeers,
-    signal,
-    createSubscription,
-    subscribe,
-    send,
+    client: context.client,
+    signals: context.signals,
+    sockets: context.sockets,
+    connectedPeers: context.connectedPeers,
+    signal: context.signal,
+    createSubscription: context.createSubscription,
+    subscribe: context.subscribe,
+    send: context.send,
+    useSubscription,
   };
 }

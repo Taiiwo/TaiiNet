@@ -25,50 +25,42 @@ on around the network to everyone who's interested.
 ![mesh vs trad](https://tucu.ca/wp-content/uploads/2014/02/traditional-WiFI-vs-mesh-WiFI-network.png)
 
 ## React Hook API
-TaiiNet is now consumed through the `useTaiiNet` React hook.
+TaiiNet is initialized once in `TaiiNetProvider`, then consumed through `useTaiiNet`.
 
 ```tsx
-import { useEffect } from "react";
-import { useTaiiNet } from "taiinet";
+import { TaiiNetProvider, useTaiiNet } from "taiinet";
 
-export function Feed() {
-  const { subscribe, signals, connectedPeers } = useTaiiNet({
-    signallers: ["ws://localhost:5000/api/1"],
-  });
+type FeedSubscriptions = {
+  tweet: {
+    type: "tweet";
+    body: string;
+  };
+};
 
-  useEffect(() => {
-    const { subscription, unsubscribe } = subscribe(
-      {
-        type: "tweet",
-        age: { $gt: 4 },
-      },
-      { backlog: true },
-      {
-        onData: (payload) => {
-          console.log("Received", payload);
-        },
-      },
-    );
-
-    subscription.send({
-      type: "tweet",
-      age: 5,
-      body: "hello network",
-    });
-
-    return unsubscribe;
-  }, [subscribe]);
+function FeedView() {
+  const { useSubscription, signals, connectedPeers } = useTaiiNet<FeedSubscriptions>();
+  const { data: tweets, sendData: sendTweet } = useSubscription({ type: "tweet" }, { backlog: true });
 
   return (
     <div>
+      <button onClick={() => sendTweet({ type: "tweet", body: "hello network" })}>Send</button>
       <p>Signals seen: {signals.length}</p>
       <p>Connected peers: {connectedPeers.length}</p>
+      <p>Tweets received: {tweets.length}</p>
     </div>
+  );
+}
+
+export function Feed() {
+  return (
+    <TaiiNetProvider signallers={["ws://localhost:5000/api/1"]}>
+      <FeedView />
+    </TaiiNetProvider>
   );
 }
 ```
 
-### Hook return values
+### `useTaiiNet` return values
 
 - `client`: underlying `TaiiNet` client instance
 - `signals`: all incoming signal messages from the signaller
@@ -78,6 +70,11 @@ export function Feed() {
 - `createSubscription(query, options)`: create a subscription instance
 - `subscribe(query, options, handlers)`: create a subscription with event handlers and an `unsubscribe` callback
 - `send(data, subscription?)`: send using a subscription (or directly to the swarm when no subscription is passed)
+- `useSubscription(query, options)`: React hook that returns:
+  - `data`: stateful array of matching records received so far
+  - `sendData(data)`: typed send helper bound to the subscription
+  - `clearData()`: clear buffered subscription state
+  - `subscription`: underlying subscription instance
 
 ## Video/Audio Streaming (Yes, like decentralized Twitch)
 
@@ -126,7 +123,7 @@ npm run build
 npm test
 ```
 
-The compiled module is written to `dist/` and exports `useTaiiNet`,
+The compiled module is written to `dist/` and exports `TaiiNetProvider`, `useTaiiNet`,
 `TaiiNet`, `Subscription`, `BacklogSubscription`, `Swarm`,
 `EventBase`, `query_match_data`, and `match_queries`.
 
