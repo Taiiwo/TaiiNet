@@ -13,7 +13,9 @@ export interface QueryRecord {
 export interface SignallerSocketLike {
   id?: string;
   on(event: string, callback: (...args: any[]) => void): void;
+  off?(event: string, callback: (...args: any[]) => void): void;
   emit(event: string, payload?: unknown): void;
+  disconnect?(): void;
 }
 
 export interface SocketBroadcast {

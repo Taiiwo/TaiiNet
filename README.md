@@ -24,39 +24,60 @@ on around the network to everyone who's interested.
 
 ![mesh vs trad](https://tucu.ca/wp-content/uploads/2014/02/traditional-WiFI-vs-mesh-WiFI-network.png)
 
-## Simple to Use
-TaiiNet can be used just like a database, only it scales automatically.
+## React Hook API
+TaiiNet is now consumed through the `useTaiiNet` React hook.
 
-```javascript
-// connect to the signallers
-var taiinet = new TaiiNet();
+```tsx
+import { useEffect } from "react";
+import { useTaiiNet } from "taiinet";
 
-// get updates to data that matches a query
-var sub = taiinet.subscribe({
-  key: "value", // only data where data[key] == "value"
-  age: {$gt: 4}, // smart queries, that's right!
-  $and: [
-    $or: [
-      name: {$contains: "b"},
-      name: {$contains: "a"}
-    ],
-    type: {$in: [1, 4, 5]}
-  ]
-});
+export function Feed() {
+  const { subscribe, signals, connectedPeers } = useTaiiNet({
+    signallers: ["ws://localhost:5000/api/1"],
+  });
 
-// when anyone on the network sends data that matches our query
-sub.on("data", function(e) {
-  console.log(e.data);
-})
+  useEffect(() => {
+    const { subscription, unsubscribe } = subscribe(
+      {
+        type: "tweet",
+        age: { $gt: 4 },
+      },
+      { backlog: true },
+      {
+        onData: (payload) => {
+          console.log("Received", payload);
+        },
+      },
+    );
 
-// send some data to interested clients (proxying through other peers)
-sub.send({
-  key: "value",
-  age: 5,
-  name: "aaa",
-  type: 4
-});
+    subscription.send({
+      type: "tweet",
+      age: 5,
+      body: "hello network",
+    });
+
+    return unsubscribe;
+  }, [subscribe]);
+
+  return (
+    <div>
+      <p>Signals seen: {signals.length}</p>
+      <p>Connected peers: {connectedPeers.length}</p>
+    </div>
+  );
+}
 ```
+
+### Hook return values
+
+- `client`: underlying `TaiiNet` client instance
+- `signals`: all incoming signal messages from the signaller
+- `sockets`: all received socket broadcasts
+- `connectedPeers`: currently connected swarm peers
+- `signal(toId, data, type)`: send raw signaller message
+- `createSubscription(query, options)`: create a subscription instance
+- `subscribe(query, options, handlers)`: create a subscription with event handlers and an `unsubscribe` callback
+- `send(data, subscription?)`: send using a subscription (or directly to the swarm when no subscription is passed)
 
 ## Video/Audio Streaming (Yes, like decentralized Twitch)
 
@@ -105,9 +126,9 @@ npm run build
 npm test
 ```
 
-The compiled module is written to `dist/` and exports `TaiiNet`,
-`Subscription`, `BacklogSubscription`, `Swarm`, `EventBase`,
-`query_match_data`, and `match_queries`.
+The compiled module is written to `dist/` and exports `useTaiiNet`,
+`TaiiNet`, `Subscription`, `BacklogSubscription`, `Swarm`,
+`EventBase`, `query_match_data`, and `match_queries`.
 
 ## Legacy demo signal server
 
