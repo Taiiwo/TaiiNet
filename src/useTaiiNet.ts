@@ -243,13 +243,11 @@ export function useTaiiNet<TSubscriptions extends SubscriptionTypeMap = Subscrip
     <TData extends QueryRecord = QueryRecord>(query: QueryRecord, options: SubscriptionOptions = {}) => {
       const queryKey = JSON.stringify(query);
       const optionsKey = JSON.stringify(options);
+      const stableQuery = useMemo(() => query, [queryKey]);
+      const stableOptions = useMemo(() => options, [optionsKey]);
       const subscription = useMemo(
-        () =>
-          createSubscription(
-            JSON.parse(queryKey) as QueryRecord,
-            JSON.parse(optionsKey) as SubscriptionOptions,
-          ),
-        [createSubscription, queryKey, optionsKey],
+        () => createSubscription(stableQuery, stableOptions),
+        [createSubscription, stableOptions, stableQuery],
       );
       const [data, setData] = useState<TData[]>([]);
 
@@ -264,6 +262,8 @@ export function useTaiiNet<TSubscriptions extends SubscriptionTypeMap = Subscrip
 
         return () => {
           subscription.off("data", onData);
+          subscription.upstream_peers = [];
+          subscription.downstream_peers = [];
           removeSubscription(subscription);
         };
       }, [removeSubscription, subscription]);
