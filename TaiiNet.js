@@ -1,6 +1,7 @@
 import { Swarm } from './Swarm.js';
 import { EventBase } from './EventBase.js';
 import { Subscription } from './Subscription.js';
+import { TaiiNetAuth } from './Auth.js';
 
 var signallers = [
     //"ws://167.160.189.251:5000/api/1",
@@ -9,10 +10,13 @@ var signallers = [
 
 // represents a connection to the signal server
 export class TaiiNet extends EventBase {
-    constructor() {
+    constructor(options) {
         super();
+        var normalized_options = options || {};
         // pass the default subscription types through for convenience
         this.Subscription = Subscription;
+        this.Auth = TaiiNetAuth;
+        this.auth = normalized_options.auth || null;
         // connect to a random signaller
         this.get_signaller();
 
@@ -38,6 +42,20 @@ export class TaiiNet extends EventBase {
     // creates a subscription object
     new(type, query, options) {
         return new type(this, this.swarm, query, options);
+    }
+
+    async authenticate(data, options) {
+        if (this.auth == null) {
+            throw new Error("TaiiNet has no authentication manager configured");
+        }
+        return this.auth.sealMessage(data, options);
+    }
+
+    async open_authenticated_message(message) {
+        if (this.auth == null) {
+            throw new Error("TaiiNet has no authentication manager configured");
+        }
+        return this.auth.openMessage(message);
     }
 
     get_signaller(callbacks) {
