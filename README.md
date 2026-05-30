@@ -38,8 +38,8 @@ type FeedSubscriptions = {
 };
 
 function FeedView() {
-  const { useSubscription, signals, connectedPeers } = useTaiiNet<FeedSubscriptions>();
-  const { data: tweets, sendData: sendTweet } = useSubscription({ type: "tweet" }, { backlog: true });
+  const { useSubscription, signals, connectedPeers } = useTaiiNet();
+  const { data: tweets, sendData: sendTweet } = useSubscription<FeedSubscriptions>({ type: "tweet" }, { backlog: true });
 
   return (
     <div>

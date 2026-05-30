@@ -53,11 +53,11 @@ function Harness({
   onHookValue,
   onSubscriptionValue,
 }: {
-  onHookValue: (value: UseTaiiNetResult<{ tweet: TweetData }>) => void;
+  onHookValue: (value: UseTaiiNetResult) => void;
   onSubscriptionValue: (value: UseSubscriptionResult<TweetData>) => void;
 }) {
-  const hookValue = useTaiiNet<{ tweet: TweetData }>();
-  const subscriptionValue = hookValue.useSubscription({ type: "tweet" }, { backlog: true });
+  const hookValue = useTaiiNet();
+  const subscriptionValue = hookValue.useSubscription<{ tweet: TweetData }>({ type: "tweet" }, { backlog: true });
 
   useEffect(() => {
     onHookValue(hookValue);
@@ -73,7 +73,7 @@ function Harness({
 describe("useTaiiNet", () => {
   it("supports provider setup and stateful typed subscriptions", () => {
     const client = new FakeClient();
-    const onHookValue = vi.fn<(value: UseTaiiNetResult<{ tweet: TweetData }>) => void>();
+    const onHookValue = vi.fn<(value: UseTaiiNetResult) => void>();
     const onSubscriptionValue = vi.fn<(value: UseSubscriptionResult<TweetData>) => void>();
     let renderer: ReturnType<typeof create> | null = null;
 

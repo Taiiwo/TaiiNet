@@ -38,8 +38,8 @@ export interface UseSubscriptionResult<TData extends QueryRecord> {
 
 export type SubscriptionTypeMap = Record<string, QueryRecord>;
 
-export type UseSubscriptionHook<TSubscriptions extends SubscriptionTypeMap> = {
-  <TType extends keyof TSubscriptions & string>(
+export type UseSubscriptionHook = {
+  <TSubscriptions extends SubscriptionTypeMap, TType extends keyof TSubscriptions & string>(
     query: QueryRecord & { type: TType },
     options?: SubscriptionOptions,
   ): UseSubscriptionResult<TSubscriptions[TType]>;
@@ -65,7 +65,7 @@ interface TaiiNetContextValue {
   removeSubscription: (subscription: Subscription) => void;
 }
 
-export interface UseTaiiNetResult<TSubscriptions extends SubscriptionTypeMap = SubscriptionTypeMap> {
+export interface UseTaiiNetResult {
   client: TaiiNet;
   signals: SignalMessage[];
   sockets: SocketBroadcast[];
@@ -78,7 +78,7 @@ export interface UseTaiiNetResult<TSubscriptions extends SubscriptionTypeMap = S
     handlers?: SubscriptionHandlers,
   ) => { subscription: Subscription; unsubscribe: () => void };
   send: (data: QueryRecord, subscription?: Subscription) => void;
-  useSubscription: UseSubscriptionHook<TSubscriptions>;
+  useSubscription: UseSubscriptionHook;
 }
 
 const TaiiNetContext = createContext<TaiiNetContextValue | null>(null);
@@ -230,7 +230,7 @@ export function TaiiNetProvider({
   return createElement(TaiiNetContext.Provider, { value: contextValue }, children);
 }
 
-export function useTaiiNet<TSubscriptions extends SubscriptionTypeMap = SubscriptionTypeMap>(): UseTaiiNetResult<TSubscriptions> {
+export function useTaiiNet(): UseTaiiNetResult {
   const context = useContext(TaiiNetContext);
 
   if (!context) {
@@ -287,7 +287,7 @@ export function useTaiiNet<TSubscriptions extends SubscriptionTypeMap = Subscrip
       };
     },
     [createSubscription, removeSubscription],
-  ) as UseSubscriptionHook<TSubscriptions>;
+  ) as UseSubscriptionHook;
 
   return {
     client: context.client,
