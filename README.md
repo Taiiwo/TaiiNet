@@ -25,6 +25,7 @@ on around the network to everyone who's interested.
 ![mesh vs trad](https://tucu.ca/wp-content/uploads/2014/02/traditional-WiFI-vs-mesh-WiFI-network.png)
 
 ## Simple to Use
+
 TaiiNet can be used just like a database, only it scales automatically.
 
 ```javascript
@@ -57,6 +58,86 @@ sub.send({
   type: 4
 });
 ```
+
+## Authentication
+
+TaiiNet now includes an optional authentication helper in
+`./Auth.js` for signing messages, encrypting them
+for one or more recipients, registering usernames against public keys, and
+issuing short-lived device transfer tokens.
+
+```javascript
+import { TaiiNet } from './TaiiNet.js';
+import { TaiiNetAuth } from './Auth.js';
+
+var auth = new TaiiNetAuth();
+await auth.createIdentity("alice");
+
+var taiinet = new TaiiNet({ auth: auth });
+var sub = taiinet.new(taiinet.Subscription, {
+  "auth.publicKeys.owner": auth.getState().identity.publicKeys.signing
+});
+
+sub.on("data", function (message, event, auth_message) {
+  console.log(message, auth_message.verified);
+});
+
+await sub.sendSecure({
+  type: "chat",
+  text: "hello world"
+}, {
+  sign: true
+});
+```
+
+### Encryption
+
+Pass recipient encryption public keys to `sendSecure` or `auth.sealMessage`.
+Encrypted envelopes still expose `auth.publicKeys.*`, `auth.username`,
+`auth.recipientPublicKeys`, and `auth.createdAt`, so subscribers can filter by
+public key before decryption.
+
+```javascript
+var recipient = bobAuth.getState().identity.publicKeys.encryption;
+await sub.sendSecure({ text: "secret" }, {
+  encryptFor: [recipient]
+});
+```
+
+### Username Registration and Lookup
+
+The authentication manager keeps an in-memory public-key registry:
+
+```javascript
+auth.lookupUsernameByPublicKey(publicKey);
+auth.lookupPublicKeysByUsername("alice");
+auth.registerUsername("alice", {
+  publicKeys: {
+    owner: ownerSigningPublicKey,
+    ownerEncryption: ownerEncryptionPublicKey
+  }
+});
+```
+
+### Device Transfer Tokens / QR Payloads
+
+Use a short-lived transfer token to move a signed device sub-key to another
+device without passwords:
+
+```javascript
+var token = await auth.createDeviceToken({ name: "phone" });
+await otherDeviceAuth.importDeviceToken(token);
+```
+
+The token is a compact base64url string, so it can be displayed directly or
+embedded inside a QR code by the application UI.
+
+### React Hooks
+
+TaiiNet does not bundle React directly, but `./TaiiNetAuthReact.js`
+exports `createTaiiNetAuthHooks(React, auth)`. Pass your React instance and a
+`TaiiNetAuth` object to receive a `useTaiiNetAuth` hook with live auth state and
+actions.
 
 ## Video/Audio Streaming (Yes, like decentralized Twitch)
 

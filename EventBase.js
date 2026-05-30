@@ -11,7 +11,19 @@ export class EventBase {
         this.callbacks[event].push(callback);
     }
 
+    off(event, callback) {
+        if (this.callbacks[event] == undefined) {
+            return;
+        }
+        this.callbacks[event] = this.callbacks[event].filter(function (handler) {
+            return handler != callback;
+        });
+    }
+
     trigger(event, ...data) {
+        if (this.callbacks[event] == undefined) {
+            return;
+        }
         for (var i in this.callbacks[event]) {
             this.callbacks[event][i](...data);
         }

@@ -1,9 +1,13 @@
 import { match_queries, query_match_data } from './TaiiNet.js';
 import { EventBase } from "./EventBase.js";
+import { is_auth_envelope } from "./Auth.js";
 
 export class Subscription extends EventBase {
-    constructor(sn, swarm, query, backlog) {
+    constructor(sn, swarm, query, options) {
         super();
+        var normalized_options = options != null && typeof (options) == "object" && Array.isArray(options) == false ? options : {
+            backlog: options
+        };
         this.query = query;
         this.maximum_upstream_peers = 3;
         this.upstream_peers = [];
@@ -13,7 +17,8 @@ export class Subscription extends EventBase {
         this.swarm = swarm;
         this.connection_pool = [];
         this.messages = [];
-        this.backlog = backlog;
+        this.backlog = normalized_options.backlog;
+        this.auth = normalized_options.auth || this.sn.auth || null;
 
         // add all the peers from the swarm that have all the data we need for this
         // subscription to our list of peers
@@ -89,7 +94,18 @@ export class Subscription extends EventBase {
     }
 
     // handles what the subscription does on receipt of data
-    handle_data(data, e) {
+    async handle_data(data, e) {
+        if (this.auth != null && is_auth_envelope(data.data)) {
+            try {
+                var opened_message = await this.auth.openMessage(data.data);
+                this.trigger("auth-data", opened_message, e);
+                this.trigger("data", opened_message.data, e, opened_message);
+            }
+            catch (error) {
+                this.trigger("auth-error", error, data.data, e);
+            }
+            return;
+        }
         this.trigger("data", data.data, e);
     }
 
@@ -110,5 +126,14 @@ export class Subscription extends EventBase {
 
     send(data) {
         this.swarm.send(data);
+    }
+
+    async sendSecure(data, options) {
+        if (this.auth == null) {
+            throw new Error("Subscription has no authentication manager configured");
+        }
+        var sealed_message = await this.auth.sealMessage(data, options);
+        this.swarm.send(sealed_message);
+        return sealed_message;
     }
 }
