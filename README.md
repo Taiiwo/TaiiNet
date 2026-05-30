@@ -24,39 +24,57 @@ on around the network to everyone who's interested.
 
 ![mesh vs trad](https://tucu.ca/wp-content/uploads/2014/02/traditional-WiFI-vs-mesh-WiFI-network.png)
 
-## Simple to Use
-TaiiNet can be used just like a database, only it scales automatically.
+## React Hook API
+TaiiNet is initialized once in `TaiiNetProvider`, then consumed through `useTaiiNet`.
 
-```javascript
-// connect to the signallers
-var taiinet = new TaiiNet();
+```tsx
+import { TaiiNetProvider, useTaiiNet } from "taiinet";
 
-// get updates to data that matches a query
-var sub = taiinet.subscribe({
-  key: "value", // only data where data[key] == "value"
-  age: {$gt: 4}, // smart queries, that's right!
-  $and: [
-    $or: [
-      name: {$contains: "b"},
-      name: {$contains: "a"}
-    ],
-    type: {$in: [1, 4, 5]}
-  ]
-});
+type FeedSubscriptions = {
+  tweet: {
+    type: "tweet";
+    body: string;
+  };
+};
 
-// when anyone on the network sends data that matches our query
-sub.on("data", function(e) {
-  console.log(e.data);
-})
+function FeedView() {
+  const { useSubscription, signals, connectedPeers } = useTaiiNet();
+  const { data: tweets, sendData: sendTweet } = useSubscription<FeedSubscriptions>({ type: "tweet" }, { backlog: true });
 
-// send some data to interested clients (proxying through other peers)
-sub.send({
-  key: "value",
-  age: 5,
-  name: "aaa",
-  type: 4
-});
+  return (
+    <div>
+      <button onClick={() => sendTweet({ type: "tweet", body: "hello network" })}>Send</button>
+      <p>Signals seen: {signals.length}</p>
+      <p>Connected peers: {connectedPeers.length}</p>
+      <p>Tweets received: {tweets.length}</p>
+    </div>
+  );
+}
+
+export function Feed() {
+  return (
+    <TaiiNetProvider signallers={["ws://localhost:5000/api/1"]}>
+      <FeedView />
+    </TaiiNetProvider>
+  );
+}
 ```
+
+### `useTaiiNet` return values
+
+- `client`: underlying `TaiiNet` client instance
+- `signals`: all incoming signal messages from the signaller
+- `sockets`: all received socket broadcasts
+- `connectedPeers`: currently connected swarm peers
+- `signal(toId, data, type)`: send raw signaller message
+- `createSubscription(query, options)`: create a subscription instance
+- `subscribe(query, options, handlers)`: create a subscription with event handlers and an `unsubscribe` callback
+- `send(data, subscription?)`: send using a subscription (or directly to the swarm when no subscription is passed)
+- `useSubscription(query, options)`: React hook that returns:
+  - `data`: stateful array of matching records received so far
+  - `sendData(data)`: typed send helper bound to the subscription
+  - `clearData()`: clear buffered subscription state
+  - `subscription`: underlying subscription instance
 
 ## Video/Audio Streaming (Yes, like decentralized Twitch)
 
@@ -83,15 +101,42 @@ WebRTC connections due to the more efficient distribution of stream uploading.
 - Create demo application for showcasing
 - Implement video/audio streaming
 
-## Getting Started
+## TypeScript module
 
-To install and run the TaiiNet demo run:
+TaiiNet now ships as a TypeScript package with typed ESM exports.
+
+### Install dependencies
 
 ```bash
-sudo pip install -r requirements.txt
+npm install
+```
+
+### Build the library
+
+```bash
+npm run build
+```
+
+### Run the test suite
+
+```bash
+npm test
+```
+
+The compiled module is written to `dist/` and exports `TaiiNetProvider`, `useTaiiNet`,
+`TaiiNet`, `Subscription`, `BacklogSubscription`, `Swarm`,
+`EventBase`, `query_match_data`, and `match_queries`.
+
+## Legacy demo signal server
+
+To install and run the bundled signalling demo:
+
+```bash
+pip install -r requirements.txt
 python signaler.py
 ```
-Then open one of the demo html files!
+
+Then open one of the demo html files.
 
 ## Disclaimer
 TaiiNet is in active development. Everything is subject to change until release.
