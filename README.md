@@ -62,7 +62,7 @@ sub.send({
 ## Authentication
 
 TaiiNet now includes an optional authentication helper in
-`/tmp/workspace/Taiiwo/TaiiNet/Auth.js` for signing messages, encrypting them
+`./Auth.js` for signing messages, encrypting them
 for one or more recipients, registering usernames against public keys, and
 issuing short-lived device transfer tokens.
 
@@ -134,7 +134,7 @@ embedded inside a QR code by the application UI.
 
 ### React Hooks
 
-TaiiNet does not bundle React directly, but `/tmp/workspace/Taiiwo/TaiiNet/TaiiNetAuthReact.js`
+TaiiNet does not bundle React directly, but `./TaiiNetAuthReact.js`
 exports `createTaiiNetAuthHooks(React, auth)`. Pass your React instance and a
 `TaiiNetAuth` object to receive a `useTaiiNetAuth` hook with live auth state and
 actions.

@@ -5,7 +5,7 @@ import { is_auth_envelope } from "./Auth.js";
 export class Subscription extends EventBase {
     constructor(sn, swarm, query, options) {
         super();
-        var normalized_options = typeof (options) == "object" && Array.isArray(options) == false ? options : {
+        var normalized_options = options != null && typeof (options) == "object" && Array.isArray(options) == false ? options : {
             backlog: options
         };
         this.query = query;
